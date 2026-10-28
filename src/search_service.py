@@ -43,6 +43,7 @@ from src.data.stock_mapping import (
     canonicalize_foreign_stock_code,
     foreign_stock_english_aliases,
 )
+from src.services.market_symbol_utils import get_suffix_market
 from src.services.run_diagnostics import record_provider_run, record_provider_run_started
 
 logger = logging.getLogger(__name__)
@@ -2534,6 +2535,9 @@ class SearchService:
         PR #2047 (so alias resolution and foreign-ness detection no longer
         disagree on the same input).
         """
+        # India (NSE ``.NS`` / BSE ``.BO``): English-language news, like US/HK.
+        if get_suffix_market(stock_code or "") == "in":
+            return True
         code = canonicalize_foreign_stock_code(stock_code).strip()
         if not code:
             return False
@@ -4074,13 +4078,15 @@ class SearchService:
                 else f"{stock_name} 股票 最新消息"
             )
         elif is_foreign:
-            # 港股/美股使用英文搜索关键词；优先使用英文公司名（issue #2026）
+            # 港股/美股/印度股使用英文搜索关键词；优先使用英文公司名（issue #2026）
+            # 印度股追加 "India"，避免 BEL / ITC 等短代码与海外同名公司混淆。
+            market_hint = " India" if get_suffix_market(stock_code or "") == "in" else ""
             if english_aliases and short_name and short_name != effective_name:
                 query = (
-                    f"{effective_name} {short_name} {stock_code} stock latest news"
+                    f"{effective_name} {short_name} {stock_code}{market_hint} stock latest news"
                 )
             else:
-                query = f"{effective_name} {stock_code} stock latest news"
+                query = f"{effective_name} {stock_code}{market_hint} stock latest news"
         else:
             # 默认主查询：股票名称 + 核心关键词
             query = f"{stock_name} {stock_code} 股票 最新消息"

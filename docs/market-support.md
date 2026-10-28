@@ -132,6 +132,9 @@ PY
 - 交易日历：`exchange-calendars` 没有 XNSE，使用与 NSE 交易时段（09:15–15:30 IST）和休市日一致的 `XBOM`，时区 `Asia/Kolkata`；NSE/BSE 盘内无收盘集合竞价，收盘集合竞价窗口为 0。
 - LLM Prompt 按印度市场语境分析：卢比汇率、RBI 政策、FII/FPI 与 DII 资金流、SEBI 监管与 ASM/GSM、个股价格带（circuit）、T+1 结算、Nifty 50 / Sensex 大盘环境，并明确不套用 A 股涨跌停、北向资金、龙虎榜等概念。
 - `YfinanceFetcher.get_main_indices(region="in")` 返回 Nifty 50（`^NSEI`）、BSE Sensex（`^BSESN`）、Nifty Bank（`^NSEBANK`）。
+- 股票名称：印度股只走 YFinance（来自实时行情），跳过 Pytdx/Baostock 等 A 股名称数据源，避免每次查找约 30 秒的连接超时。
+- 新闻搜索：印度股按境外股票处理，使用英文查询并追加 `India`（如 `BHARAT ELECTRONICS LTD BEL.NS India stock latest news`），不使用 A 股的「股票 最新消息」中文查询。
+- 英文报告（`REPORT_LANGUAGE=en`）中，印度股的营收、净利润、经营现金流以 `₹… Cr` / `₹… L`（crore/lakh）显示，每股分红为 `₹…`；行情快照的成交量与成交额使用英文数量级（如 `43.40M shares`），不再出现「万股/亿卢比」。中文报告格式不变。
 - `in` 已加入 DecisionSignal、持仓、情报写入路径的合法市场，确保每日分析自动提取的决策信号不会因市场校验失败被丢弃（预测准确率记分卡依赖这些信号，见 [prediction-scorecard.md](prediction-scorecard.md)）。
 
 当前边界：

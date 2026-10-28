@@ -3140,11 +3140,18 @@ class DataFetcherManager:
         # 3. 依次尝试各个数据源
         from .akshare_fetcher import _is_us_code
         is_us = _is_us_code(stock_code)
+        # India (.NS/.BO) is yfinance-only: China-market sources cannot resolve
+        # these symbols and some (Pytdx/Baostock) spend ~30s per lookup timing
+        # out. The name comes from the yfinance realtime quote in step 2.
+        is_in = _is_in_market(stock_code)
         _US_CAPABLE_FETCHERS = {"YfinanceFetcher", "LongbridgeFetcher", "FinnhubFetcher", "AlphaVantageFetcher"}
+        _IN_CAPABLE_FETCHERS = {"YfinanceFetcher"}
         for fetcher in self._get_fetchers_snapshot():
             if not hasattr(fetcher, 'get_stock_name'):
                 continue
             if is_us and fetcher.name not in _US_CAPABLE_FETCHERS:
+                continue
+            if is_in and fetcher.name not in _IN_CAPABLE_FETCHERS:
                 continue
             if not self._is_fetcher_available(fetcher, capability="stock_name"):
                 continue

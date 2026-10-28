@@ -189,3 +189,120 @@ def test_in_is_first_class_on_write_paths() -> None:
     assert "in" in VALID_MARKETS
     assert "in" in _ALLOWED_MARKETS
     assert DecisionSignalService._normalize_market("in") == "in"
+
+
+class _NamedFakeFetcher(_FakeFetcher):
+    def __init__(self, name: str, stock_name=None):
+        super().__init__(name)
+        self.name_calls = []
+        self._stock_name = stock_name
+
+    def get_stock_name(self, stock_code):
+        self.name_calls.append(stock_code)
+        return self._stock_name
+
+
+def test_stock_name_lookup_skips_china_only_sources_for_indian_codes() -> None:
+    """China-market name sources cannot resolve .NS/.BO symbols and some of
+    them (Pytdx/Baostock) spend ~30s timing out per lookup; Indian codes must
+    not reach them."""
+    pytdx = _NamedFakeFetcher("PytdxFetcher", stock_name="WRONG")
+    baostock = _NamedFakeFetcher("BaostockFetcher", stock_name="WRONG")
+    manager = DataFetcherManager(fetchers=[pytdx, baostock])
+
+    with patch("data_provider.base.get_index_stock_name", return_value=None):
+        name = manager.get_stock_name("YESBANK.NS", allow_realtime=False)
+
+    assert name == ""
+    assert pytdx.name_calls == []
+    assert baostock.name_calls == []
+
+
+def test_stock_name_lookup_still_uses_china_sources_for_a_shares() -> None:
+    pytdx = _NamedFakeFetcher("PytdxFetcher", stock_name="贵州茅台")
+    manager = DataFetcherManager(fetchers=[pytdx])
+
+    with patch("data_provider.base.get_index_stock_name", return_value=None), \
+            patch("data_provider.base.STOCK_NAME_MAP", {}):
+        name = manager.get_stock_name("600519", allow_realtime=False)
+
+    assert name == "贵州茅台"
+    assert pytdx.name_calls == ["600519"]
+
+
+def test_news_search_uses_english_india_query_for_indian_stocks() -> None:
+    """Indian stocks must get an English news query (not the A-share
+    "股票 最新消息" form) with an "India" hint so short symbols such as BEL or
+    ITC are not confused with overseas namesakes."""
+    from datetime import datetime
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from src.search_service import SearchResponse, SearchResult, SearchService
+
+    assert SearchService._is_foreign_stock("YESBANK.NS") is True
+    assert SearchService._is_foreign_stock("500180.BO") is True
+
+    service = SearchService(
+        bocha_keys=["dummy_key"],
+        searxng_public_instances_enabled=False,
+        news_max_age_days=3,
+        news_strategy_profile="short",
+    )
+    captured = {}
+
+    def _capture(query, max_results, **kwargs):
+        captured["query"] = query
+        return SearchResponse(
+            query=query,
+            results=[
+                SearchResult(
+                    title="Bharat Electronics wins defence order",
+                    snippet="BEL shares rise",
+                    url="https://example.com/bel",
+                    source="example.com",
+                    published_date=datetime.now().date().isoformat(),
+                )
+            ],
+            provider="Unit",
+            success=True,
+        )
+
+    provider = SimpleNamespace(is_available=True, name="Unit", search=MagicMock(side_effect=_capture))
+    service._providers = [provider]
+
+    with patch("src.search_service.time.sleep"):
+        service.search_stock_news("BEL.NS", "BHARAT ELECTRONICS LTD", max_results=5)
+
+    query = captured.get("query", "")
+    assert "BEL.NS India stock latest news" in query
+    assert "股票" not in query
+
+
+def test_english_reports_format_inr_amounts_in_crore_and_lakh() -> None:
+    from src.notification import NotificationService
+
+    assert NotificationService._format_report_amount(10_545_000_000, "INR", "en") == "₹1,054.50 Cr"
+    assert NotificationService._format_report_amount(-483_434_000_000, "INR", "en") == "-₹48,343.40 Cr"
+    assert NotificationService._format_report_amount(1_234_567, "INR", "en") == "₹12.35 L"
+    assert NotificationService._format_report_amount(10_545_000_000, "USD", "en") == "$10.54B"
+    assert NotificationService._format_per_share(2.5, "INR", "en") == "₹2.50"
+    # Chinese reports keep the existing 亿/万 + currency-suffix format.
+    assert NotificationService._format_report_amount(10_545_000_000, "INR", "zh") == "105.45 亿卢比"
+    assert NotificationService._format_per_share(2.5, "INR") == "2.5000 卢比"
+
+
+def test_english_market_snapshot_uses_english_volume_units() -> None:
+    from src.analyzer import GeminiAnalyzer
+
+    analyzer = GeminiAnalyzer.__new__(GeminiAnalyzer)
+    context = {
+        "date": "2026-10-28",
+        "today": {"close": 15.97, "open": 16.7, "high": 16.79, "low": 15.77, "volume": 434_000_000, "amount": None},
+        "yesterday": {"close": 16.51},
+    }
+    english = analyzer._build_market_snapshot(context, "en")
+    assert english["volume"] == "434.00M shares"
+    assert "亿" not in english["volume"]
+    chinese = analyzer._build_market_snapshot(context)
+    assert chinese["volume"] == "4.34 亿股"

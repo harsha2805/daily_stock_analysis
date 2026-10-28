@@ -2202,6 +2202,55 @@ class NotificationService(
             return f"{sign}{abs_amount / 1e4:.2f} 万{suffix}"
         return f"{sign}{abs_amount:.0f} {suffix}"
 
+    # English-report currency prefixes. INR amounts use the Indian crore/lakh
+    # convention (1 Cr = 1e7, 1 L = 1e5) that Indian filings and brokers use.
+    _CURRENCY_SYMBOL_EN = {
+        "USD": "$",
+        "HKD": "HK$",
+        "CNY": "CN¥",
+        "RMB": "CN¥",
+        "CNH": "CN¥",
+        "TWD": "NT$",
+        "INR": "₹",
+    }
+
+    @staticmethod
+    def _is_english_report(report_language: Optional[str]) -> bool:
+        return normalize_report_language(report_language) in ("en", "ko")
+
+    @classmethod
+    def _format_amount_en(cls, value: Any, currency: Optional[str] = None) -> str:
+        """Format absolute amounts for English reports: ₹ crore/lakh for INR, K/M/B otherwise."""
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            return "N/A"
+        if amount != amount:  # NaN
+            return "N/A"
+        code = (currency or "").upper()
+        prefix = cls._CURRENCY_SYMBOL_EN.get(code, f"{code} " if code else "")
+        sign = "-" if amount < 0 else ""
+        abs_amount = abs(amount)
+        if code == "INR":
+            if abs_amount >= 1e7:
+                return f"{sign}{prefix}{abs_amount / 1e7:,.2f} Cr"
+            if abs_amount >= 1e5:
+                return f"{sign}{prefix}{abs_amount / 1e5:,.2f} L"
+            return f"{sign}{prefix}{abs_amount:,.0f}"
+        if abs_amount >= 1e9:
+            return f"{sign}{prefix}{abs_amount / 1e9:,.2f}B"
+        if abs_amount >= 1e6:
+            return f"{sign}{prefix}{abs_amount / 1e6:,.2f}M"
+        if abs_amount >= 1e3:
+            return f"{sign}{prefix}{abs_amount / 1e3:,.2f}K"
+        return f"{sign}{prefix}{abs_amount:,.0f}"
+
+    @classmethod
+    def _format_report_amount(cls, value: Any, currency: Optional[str], report_language: Optional[str]) -> str:
+        if cls._is_english_report(report_language):
+            return cls._format_amount_en(value, currency)
+        return cls._format_amount_cn(value, currency)
+
     @staticmethod
     def _format_percent(value: Any) -> str:
         try:
@@ -2210,13 +2259,22 @@ class NotificationService(
             return "N/A"
 
     @classmethod
-    def _format_per_share(cls, value: Any, currency: Optional[str] = None) -> str:
+    def _format_per_share(
+        cls,
+        value: Any,
+        currency: Optional[str] = None,
+        report_language: Optional[str] = None,
+    ) -> str:
         try:
             amount = float(value)
         except (TypeError, ValueError):
             return "N/A"
         if amount != amount:  # NaN
             return "N/A"
+        if cls._is_english_report(report_language):
+            code = (currency or "").upper()
+            prefix = cls._CURRENCY_SYMBOL_EN.get(code, f"{code} " if code else "")
+            return f"{prefix}{amount:,.2f}"
         suffix = cls._CURRENCY_SUFFIX.get((currency or "").upper(), "元")
         return f"{amount:.4f} {suffix}"
 
@@ -2302,8 +2360,8 @@ class NotificationService(
         report_language = self._get_report_language(result)
         labels = get_report_labels(report_language)
 
-        self._append_financial_summary(lines, blocks, labels)
-        self._append_shareholder_return(lines, blocks, labels)
+        self._append_financial_summary(lines, blocks, labels, report_language=report_language)
+        self._append_shareholder_return(lines, blocks, labels, report_language=report_language)
         self._append_institutional_flow(lines, blocks, labels)
         self._append_related_boards(lines, blocks, labels)
 
@@ -2312,15 +2370,19 @@ class NotificationService(
         lines: List[str],
         blocks: Dict[str, Any],
         labels: Dict[str, str],
+        *,
+        report_language: Optional[str] = None,
     ) -> None:
         report = blocks.get("financial_report") or {}
         growth = blocks.get("growth") or {}
         currency = report.get("currency") if isinstance(report.get("currency"), str) else None
         cells = {
             "report_date": self._format_text(report.get("report_date")),
-            "revenue": self._format_amount_cn(report.get("revenue"), currency),
-            "net_profit": self._format_amount_cn(report.get("net_profit_parent"), currency),
-            "operating_cash_flow": self._format_amount_cn(report.get("operating_cash_flow"), currency),
+            "revenue": self._format_report_amount(report.get("revenue"), currency, report_language),
+            "net_profit": self._format_report_amount(report.get("net_profit_parent"), currency, report_language),
+            "operating_cash_flow": self._format_report_amount(
+                report.get("operating_cash_flow"), currency, report_language
+            ),
             "roe": self._format_percent(report.get("roe") if report.get("roe") is not None else growth.get("roe")),
             "revenue_yoy": self._format_percent(growth.get("revenue_yoy")),
             "net_profit_yoy": self._format_percent(growth.get("net_profit_yoy")),
@@ -2353,6 +2415,8 @@ class NotificationService(
         lines: List[str],
         blocks: Dict[str, Any],
         labels: Dict[str, str],
+        *,
+        report_language: Optional[str] = None,
     ) -> None:
         dividend = blocks.get("dividend") or {}
         report = blocks.get("financial_report") or {}
@@ -2369,7 +2433,9 @@ class NotificationService(
 
         ttm_event_count = dividend.get("ttm_event_count")
         cells = {
-            "ttm_cash": self._format_per_share(dividend.get("ttm_cash_dividend_per_share"), dividend_currency),
+            "ttm_cash": self._format_per_share(
+                dividend.get("ttm_cash_dividend_per_share"), dividend_currency, report_language
+            ),
             "ttm_count": str(ttm_event_count) if isinstance(ttm_event_count, int) else "N/A",
             "ttm_yield": self._format_percent(dividend.get("ttm_dividend_yield_pct")),
             "latest_ex": self._format_text(latest_event.get("ex_dividend_date") or latest_event.get("event_date")),
