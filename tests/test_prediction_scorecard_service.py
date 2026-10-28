@@ -19,6 +19,7 @@ from src.services.prediction_scorecard_service import (
     build_scorecard,
     confidence_level,
     confidence_verdict,
+    dedupe_same_day_calls,
     render_markdown,
     run_prediction_scorecard,
     score_band,
@@ -92,6 +93,22 @@ def test_confidence_level_and_score_band() -> None:
     assert score_band(20) == "20-39"
     assert score_band(5) == "0-19"
     assert score_band(None) == "unknown"
+
+
+def test_dedupe_same_day_calls_keeps_latest_run() -> None:
+    day = date(2026, 10, 28)
+    calls = [
+        _call(signal_id=10, anchor_date=day, outcome="miss"),  # manual run
+        _call(signal_id=11, anchor_date=day, outcome="hit"),  # late scheduled run, same day
+        _call(signal_id=12, anchor_date=day, horizon="5d"),  # other window stays
+        _call(signal_id=13, anchor_date=day, stock_code="BEL.NS"),  # other stock stays
+        _call(signal_id=14, anchor_date=date(2026, 10, 29)),  # next day stays
+        _call(signal_id=15, anchor_date=None),  # unmatched, kept
+    ]
+    kept, dropped = dedupe_same_day_calls(calls)
+    assert dropped == 1
+    assert sorted(c.signal_id for c in kept) == [11, 12, 13, 14, 15]
+    assert tally(kept).hit == 5
 
 
 def test_tally_hit_rate_excludes_neutral() -> None:
@@ -238,6 +255,24 @@ def _add_bars(db, code, start: date, closes):
         for offset, close in enumerate(closes):
             day = start + timedelta(days=offset)
             session.add(StockDaily(code=code, date=day, open=close, high=close, low=close, close=close))
+
+
+def test_service_counts_one_call_per_stock_when_analysis_ran_twice(isolated_db) -> None:
+    anchor = date(2026, 10, 1)
+    # Same stock analysed twice on the same day (manual run + scheduled run).
+    _add_signal(isolated_db, code="YESBANK.NS", action="buy", session_date=anchor.isoformat())
+    second = _add_signal(isolated_db, code="YESBANK.NS", action="buy", session_date=anchor.isoformat())
+    _add_bars(isolated_db, "YESBANK.NS", anchor, [100.0 + i for i in range(11)])
+
+    service = PredictionScorecardService(
+        db_manager=isolated_db, fetcher_manager=None, benchmark_loader=lambda *_: []
+    )
+    scorecard = service.build(lookback_days=90, today=date(2026, 10, 30))
+
+    assert scorecard["duplicates_ignored"] == 4  # one extra call per window
+    assert scorecard["headline"]["total"] == 1
+    assert [item["total"] for item in scorecard["by_horizon"]] == [1, 1, 1, 1]
+    assert {c.signal_id for c in service.load_scored_calls(anchor - timedelta(days=1))} >= {second}
 
 
 def test_service_evaluates_all_windows_and_scores_against_benchmark(isolated_db) -> None:

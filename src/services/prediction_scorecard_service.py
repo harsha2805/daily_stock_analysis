@@ -156,6 +156,32 @@ def tally(calls: Iterable[ScoredCall]) -> Tally:
     return result
 
 
+def dedupe_same_day_calls(calls: Iterable[ScoredCall]) -> Tuple[List[ScoredCall], int]:
+    """Keep one call per stock, trading day and window.
+
+    Every analysis run writes its own DecisionSignal, so a manual run plus a
+    (late) scheduled run on the same day would otherwise count each stock
+    twice and inflate hit rates and sample sizes. The latest signal of the
+    day (highest ``signal_id``) wins, which also matches the signal that
+    survives when a later run flips the direction. Calls without an anchor
+    date cannot be matched and are kept as-is.
+    """
+    latest: Dict[Tuple[str, date, str], ScoredCall] = {}
+    passthrough: List[ScoredCall] = []
+    total = 0
+    for call in calls:
+        total += 1
+        if call.anchor_date is None:
+            passthrough.append(call)
+            continue
+        key = (call.stock_code, call.anchor_date, call.horizon)
+        current = latest.get(key)
+        if current is None or call.signal_id > current.signal_id:
+            latest[key] = call
+    kept = sorted(latest.values(), key=lambda c: c.signal_id) + passthrough
+    return kept, total - len(kept)
+
+
 # ---------------------------------------------------------------------------
 # Benchmark comparison
 # ---------------------------------------------------------------------------
@@ -722,7 +748,9 @@ class PredictionScorecardService:
         codes = self.recent_signal_codes(since)
         refresh = self.refresh_daily_bars(codes, days=int(lookback_days) + 20)
         evaluation = self.evaluate_pending()
-        calls = self.load_scored_calls(since)
+        calls, duplicates = dedupe_same_day_calls(self.load_scored_calls(since))
+        if duplicates:
+            logger.info("[scorecard] ignored %d duplicate same-day call(s) from repeated runs", duplicates)
         calls, names, warnings = attach_benchmarks(calls, self.benchmark_loader)
         scorecard = build_scorecard(
             calls,
@@ -732,6 +760,7 @@ class PredictionScorecardService:
             warnings=warnings,
         )
         scorecard["refresh"] = refresh
+        scorecard["duplicates_ignored"] = duplicates
         scorecard["evaluation"] = {
             key: evaluation.get(key)
             for key in ("evaluated", "created", "updated", "skipped", "error")

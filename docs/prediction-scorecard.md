@@ -19,6 +19,8 @@ against forward daily bars with a ±2% neutral band.
 | By stock / by action | Hit rate and benchmark comparison per stock and per action (`buy`, `hold`, `sell`, …) on the headline window. |
 | Confidence check | Hit rate by the AI's own confidence label (high / medium / low) and by score band, with a verdict on whether higher confidence actually meant better calls. |
 
+Each stock counts **once per trading day**. If the analysis runs more than once on the same day (for example a manual run plus a late scheduled run), only the latest call for that stock is graded, so repeated runs do not inflate hit rates or sample sizes.
+
 ### How "beat the index" is decided
 
 | Call | Implied choice | Edge |
