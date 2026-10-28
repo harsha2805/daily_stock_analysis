@@ -220,7 +220,7 @@ daily_stock_analysis/
 ### 4. 手动测试
 
 1. 进入 `Actions` 标签
-2. 左侧选择 `每日股票分析` workflow
+2. 左侧选择 `Daily Stock Analysis` workflow
 3. 点击右侧的 `Run workflow` 按钮
 4. 选择运行模式
 5. 点击绿色的 `Run workflow` 确认
@@ -875,7 +875,7 @@ schedule:
 
 手动触发步骤：
 
-1. 打开 `Actions → 每日股票分析 → Run workflow`
+1. 打开 `Actions → Daily Stock Analysis → Run workflow`
 2. 选择 `mode`（`full` / `market-only` / `stocks-only`）
 3. 若当天是非交易日且希望仍执行，将 `force_run` 设为 `true`
 4. 点击 `Run workflow`

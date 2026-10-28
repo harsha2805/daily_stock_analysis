@@ -148,7 +148,7 @@
 
 #### 4. 手动测试
 
-`Actions` → `每日股票分析` → `Run workflow` → `Run workflow`
+`Actions` → `Daily Stock Analysis` → `Run workflow` → `Run workflow`
 
 #### 完成
 

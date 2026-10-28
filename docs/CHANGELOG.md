@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 新增印度股票支持（suffix-only，NSE `.NS` / BSE `.BO`，如 `RELIANCE.NS`、`M&M.NS`、`500180.BO`）：日线、实时行情与基本面走 YFinance，XBOM 交易日历（Asia/Kolkata），印度市场 Prompt 语境，Nifty 50 / Sensex / Nifty Bank 指数，`in` 加入决策信号/持仓/情报市场枚举；印度大盘复盘暂未接入，详见 `docs/market-support.md`。
 - [新功能] 新增预测准确率记分卡（`python main.py --scorecard`，不调用 LLM）：基于 DecisionSignal 后验结果统计 1/3/5/10 个交易日命中率、按个股与动作拆分、是否跑赢对应大盘指数（印度 Nifty 50、美股 S&P 500 等）及置信度检验，生成报告并推送，详见 `docs/prediction-scorecard.md`。
 - [改进] 每日分析 GitHub Actions 工作流通过 Actions cache 跨次保存 `data/stock_analysis.db`，新增 `scorecard` 手动模式与每周记分卡推送（仓库变量 `SCORECARD_WEEKDAY`，默认周五，`off` 关闭；`SCORECARD_DAYS` 默认 90），定时改为 UTC 10:45（北京时间 18:45 / 印度时间 16:15）以覆盖 NSE/BSE 收盘。
+- [改进] 每日分析工作流界面文本改为英文：工作流名称改为 `Daily Stock Analysis`，手动运行选项、步骤名称、注释与配置检查输出均为英文（文件路径不变，已有链接与定时不受影响）。
 - [新功能] 新增可选的 fastapi-guard 安全中间件（`GUARD_ENABLED=true`，默认关闭）：按 IP 限流、IP 白/黑名单、请求特征拦截与扫描器自动封禁，与登录失败限流叠加；客户端 IP 取值与 `TRUST_X_FORWARDED_FOR` 保持一致，启用后内置启动入口的 Uvicorn 代理头处理只信任同一组代理，默认不扫描请求体，详见 `docs/full-guide.md`。
 - [修复] Telegram 推送按 UTF-16 长度判断与分段，修复含大量 emoji 的报告超出 4096 限制导致发送失败的问题。
 

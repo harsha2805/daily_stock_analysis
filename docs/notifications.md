@@ -73,7 +73,7 @@ Discord 长报告发送复用现有分片链路：单条 `content` 运行时不�
 | `EMAIL_SENDER` | minimal | email | Variable or Secret | - |
 | `EMAIL_PASSWORD` | minimal | email | Secret | - |
 | `EMAIL_RECEIVERS` | advanced | email | Variable or Secret | - |
-| `EMAIL_SENDER_NAME` | advanced | email | Variable or Secret | `daily_stock_analysis股票分析助手` |
+| `EMAIL_SENDER_NAME` | advanced | email | Variable or Secret | `daily_stock_analysis Stock Assistant` |
 | `PUSHOVER_USER_KEY` | minimal | pushover | Secret | - |
 | `PUSHOVER_API_TOKEN` | minimal | pushover | Secret | - |
 | `NTFY_URL` | minimal | ntfy | Secret | - |

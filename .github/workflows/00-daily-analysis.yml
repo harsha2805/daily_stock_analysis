@@ -1,31 +1,31 @@
-name: 每日股票分析
+name: Daily Stock Analysis
 
 on:
-  # 定时触发 - 每天 UTC 10:45 = 北京时间 18:45 = 印度时间 16:15
-  # （A 股收盘后，且晚于 NSE/BSE 15:30 收盘，保证印度股日线已定稿）
+  # Scheduled: every weekday at UTC 10:45 = 16:15 India (IST) = 18:45 Beijing
+  # (after the China A-share close and after the NSE/BSE 15:30 close, so Indian daily bars are final)
   schedule:
-    - cron: '45 10 * * 1-5'    # 周一到周五，UTC 10:45
+    - cron: '45 10 * * 1-5'    # Monday to Friday, UTC 10:45
   
-  # 手动触发
+  # Manual trigger
   workflow_dispatch:
     inputs:
       mode:
-        description: '运行模式'
+        description: 'Run mode'
         required: true
         default: 'full'
         type: choice
         options:
-          - full          # 完整分析（股票+大盘）
-          - market-only   # 仅大盘复盘
-          - stocks-only   # 仅股票分析
-          - scorecard     # 仅运行预测准确率记分卡（不调用 LLM）
+          - full          # Full analysis (stocks + market review)
+          - market-only   # Market review only
+          - stocks-only   # Stock analysis only
+          - scorecard     # Prediction scorecard only (no LLM calls)
       force_run:
-        description: '强制运行（跳过交易日检查）'
+        description: 'Force run (skip the trading-day check)'
         required: false
         default: false
         type: boolean
 
-# 并发控制：同一时间只运行一个分析任务
+# Concurrency: only one analysis run at a time
 concurrency:
   group: stock-analysis
   cancel-in-progress: false
@@ -33,40 +33,41 @@ concurrency:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    # 兼容误将 STOCK_LIST 配到同名 Environment variables 的场景；
-    # 推荐位置仍是 Settings -> Secrets and variables -> Actions -> Repository variables。
+    # Also supports STOCK_LIST set as an Environment variable of the same name;
+    # the recommended place is still Settings -> Secrets and variables -> Actions -> Repository variables.
     environment: STOCK_LIST
-    # 添加超时限制，防止任务卡死
+    # Timeout so a stuck run cannot hang forever
     timeout-minutes: ${{ fromJSON(vars.ANALYSIS_TIMEOUT_MINUTES || '30') }}
     
     steps:
-      - name: 随机延迟（避免固定时间访问）
-        run: sleep $((RANDOM % 60))  # 随机延迟0-60秒启动
+      - name: Random delay (avoid hitting data sources at a fixed time)
+        run: sleep $((RANDOM % 60))  # start after a random 0-60 s delay
       
-      - name: 检出代码
+      - name: Check out code
         uses: actions/checkout@v5
       
-      - name: 设置 Python 环境
+      - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: 'pip'
       
-      - name: 安装依赖
+      - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           python -c "import futu; print('✅ futu SDK import OK')"
       
-      - name: 创建必要目录
+      - name: Create working directories
         run: |
           mkdir -p data logs reports
 
-      # 预测准确率记分卡需要跨次运行的历史数据（AI 建议 + 日线）。
-      # GitHub Actions 每次都是全新环境，因此用 Actions cache 滚动保存 SQLite 数据库：
-      # 恢复最近一次保存的版本，运行结束后以新 key 再保存。
-      # 每个工作日都会重新保存（休市日也会），7 天未访问才会被回收，正常节奏下不会过期。
-      - name: 恢复分析数据库
+      # The prediction scorecard needs history across runs (AI calls + daily bars).
+      # Every GitHub Actions run starts clean, so the SQLite database is carried forward
+      # with a rolling Actions cache: restore the newest saved copy, then save it under a
+      # new key at the end. It is re-saved every weekday (market holidays too); caches are
+      # only evicted after 7 days without access, so normal schedules never lose it.
+      - name: Restore analysis database
         uses: actions/cache/restore@v4
         with:
           path: data/stock_analysis.db
@@ -74,10 +75,10 @@ jobs:
           restore-keys: |
             dsa-db-${{ github.ref_name }}-
       
-      - name: 执行股票分析
+      - name: Run stock analysis
         env:
           # ==========================================
-          # AI 配置
+          # AI configuration
           # ==========================================
           GENERATION_BACKEND: ${{ vars.GENERATION_BACKEND || secrets.GENERATION_BACKEND }}
           GENERATION_FALLBACK_BACKEND: ${{ vars.GENERATION_FALLBACK_BACKEND || secrets.GENERATION_FALLBACK_BACKEND || 'litellm' }}
@@ -103,7 +104,7 @@ jobs:
           LLM_PROMPT_CACHE_HINTS_ENABLED: ${{ vars.LLM_PROMPT_CACHE_HINTS_ENABLED || secrets.LLM_PROMPT_CACHE_HINTS_ENABLED }}
           LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL: ${{ vars.LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL || secrets.LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL }}
           LLM_CHANNELS: ${{ vars.LLM_CHANNELS || secrets.LLM_CHANNELS }}
-          # Modelflare：只需 MODELFLARE_KEY；以下渠道配置供高级覆盖。
+          # Modelflare: MODELFLARE_KEY is enough; the channel settings below are advanced overrides.
           MODELFLARE_KEY: ${{ secrets.MODELFLARE_KEY }}
           LLM_MODELFLARE_PROTOCOL: ${{ vars.LLM_MODELFLARE_PROTOCOL || secrets.LLM_MODELFLARE_PROTOCOL }}
           LLM_MODELFLARE_API_SURFACE: ${{ vars.LLM_MODELFLARE_API_SURFACE || secrets.LLM_MODELFLARE_API_SURFACE }}
@@ -113,8 +114,8 @@ jobs:
           LLM_MODELFLARE_MODELS: ${{ vars.LLM_MODELFLARE_MODELS || secrets.LLM_MODELFLARE_MODELS }}
           LLM_MODELFLARE_ENABLED: ${{ vars.LLM_MODELFLARE_ENABLED || secrets.LLM_MODELFLARE_ENABLED }}
           LLM_MODELFLARE_EXTRA_HEADERS: ${{ vars.LLM_MODELFLARE_EXTRA_HEADERS || secrets.LLM_MODELFLARE_EXTRA_HEADERS }}
-          # Hermes 是本地 loopback generation preset；API Key 只从 Secrets 注入。
-          # GitHub-hosted runner 的 127.0.0.1 不是用户电脑，本配置通常只适合 self-hosted runner。
+          # Hermes is a local loopback generation preset; its API key only comes from Secrets.
+          # 127.0.0.1 on a GitHub-hosted runner is not your computer, so this usually only suits self-hosted runners.
           LLM_HERMES_PROTOCOL: ${{ vars.LLM_HERMES_PROTOCOL || secrets.LLM_HERMES_PROTOCOL }}
           LLM_HERMES_API_SURFACE: ${{ vars.LLM_HERMES_API_SURFACE || secrets.LLM_HERMES_API_SURFACE }}
           LLM_HERMES_BASE_URL: ${{ vars.LLM_HERMES_BASE_URL || secrets.LLM_HERMES_BASE_URL }}
@@ -122,17 +123,17 @@ jobs:
           LLM_HERMES_MODELS: ${{ vars.LLM_HERMES_MODELS || secrets.LLM_HERMES_MODELS }}
           LLM_HERMES_ENABLED: ${{ vars.LLM_HERMES_ENABLED || secrets.LLM_HERMES_ENABLED }}
 
-          # Gemini AI（主选）
+          # Gemini AI (primary)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-3-flash-preview' }}
           GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || secrets.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash' }}
           GEMINI_REQUEST_DELAY: '3.0'
           
-          # AIHubMix（优先于 OPENAI_API_KEY，自动适配 base_url，推荐国内用户）
+          # AIHubMix (takes precedence over OPENAI_API_KEY and sets base_url automatically)
           AIHUBMIX_KEY: ${{ secrets.AIHUBMIX_KEY }}
 
-          # OpenAI 兼容 API（备选）
+          # OpenAI-compatible API (alternative)
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_KEYS: ${{ secrets.OPENAI_API_KEYS }}
           OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
@@ -147,7 +148,7 @@ jobs:
           ANTHROPIC_API_KEYS: ${{ secrets.ANTHROPIC_API_KEYS }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || secrets.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022' }}
 
-          # LLM 渠道模式（常见渠道名需显式映射，GitHub Actions 不会自动导入任意 Secret/Variable）
+          # LLM channel mode (common channel names are mapped explicitly; GitHub Actions does not import arbitrary Secrets/Variables)
           LLM_PRIMARY_PROTOCOL: ${{ vars.LLM_PRIMARY_PROTOCOL || secrets.LLM_PRIMARY_PROTOCOL }}
           LLM_PRIMARY_API_SURFACE: ${{ vars.LLM_PRIMARY_API_SURFACE || secrets.LLM_PRIMARY_API_SURFACE }}
           LLM_PRIMARY_BASE_URL: ${{ vars.LLM_PRIMARY_BASE_URL || secrets.LLM_PRIMARY_BASE_URL }}
@@ -302,18 +303,18 @@ jobs:
           LLM_OLLAMA_EXTRA_HEADERS: ${{ vars.LLM_OLLAMA_EXTRA_HEADERS || secrets.LLM_OLLAMA_EXTRA_HEADERS }}
 
           # ==========================================
-          # 数据源
+          # Data sources
           # ==========================================
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
-          # Tushare Pro 自定义接入地址（可选；指向自建网关或第三方兼容镜像时设置）
+          # Custom Tushare Pro endpoint (optional; for a self-hosted gateway or compatible mirror)
           TUSHARE_HTTP_URL: ${{ vars.TUSHARE_HTTP_URL || secrets.TUSHARE_HTTP_URL }}
-          # TickFlow（A 股日 K、实时行情、股票列表/名称与大盘复盘增强；不设则走免费源 fallback）
+          # TickFlow (A-share daily bars, realtime quotes, stock list/names, market review; free sources are used when unset)
           TICKFLOW_API_KEY: ${{ secrets.TICKFLOW_API_KEY }}
           TICKFLOW_PRIORITY: ${{ vars.TICKFLOW_PRIORITY || secrets.TICKFLOW_PRIORITY }}
           TICKFLOW_KLINE_ADJUST: ${{ vars.TICKFLOW_KLINE_ADJUST || secrets.TICKFLOW_KLINE_ADJUST }}
           TICKFLOW_BATCH_DAILY_ENABLED: ${{ vars.TICKFLOW_BATCH_DAILY_ENABLED || secrets.TICKFLOW_BATCH_DAILY_ENABLED }}
           TICKFLOW_BATCH_SIZE: ${{ vars.TICKFLOW_BATCH_SIZE || secrets.TICKFLOW_BATCH_SIZE }}
-          # Longbridge OpenAPI（美股/港股实时行情字段补充；不设则仅 YFinance/AkShare，无 [Longbridge] 调用）
+          # Longbridge OpenAPI (extra US/HK realtime quote fields; when unset only YFinance/AkShare are used)
           LONGBRIDGE_OAUTH_CLIENT_ID: ${{ vars.LONGBRIDGE_OAUTH_CLIENT_ID || secrets.LONGBRIDGE_OAUTH_CLIENT_ID }}
           LONGBRIDGE_OAUTH_TOKEN_CACHE_B64: ${{ secrets.LONGBRIDGE_OAUTH_TOKEN_CACHE_B64 }}
           LONGBRIDGE_APP_KEY: ${{ secrets.LONGBRIDGE_APP_KEY }}
@@ -327,11 +328,11 @@ jobs:
           LONGBRIDGE_ENABLE_OVERNIGHT: ${{ vars.LONGBRIDGE_ENABLE_OVERNIGHT || secrets.LONGBRIDGE_ENABLE_OVERNIGHT }}
           LONGBRIDGE_PUSH_CANDLESTICK_MODE: ${{ vars.LONGBRIDGE_PUSH_CANDLESTICK_MODE || secrets.LONGBRIDGE_PUSH_CANDLESTICK_MODE }}
           LONGBRIDGE_PRINT_QUOTE_PACKAGES: ${{ vars.LONGBRIDGE_PRINT_QUOTE_PACKAGES || secrets.LONGBRIDGE_PRINT_QUOTE_PACKAGES }}
-          # FXMacroData（Agent 宏观数据工具的可选授权；不设则仅使用公开 USD 数据）
+          # FXMacroData (optional key for the Agent macro-data tool; public USD data only when unset)
           FXMACRODATA_API_KEY: ${{ secrets.FXMACRODATA_API_KEY }}
           
           # ==========================================
-          # 搜索服务
+          # Search services
           # ==========================================
           ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }} 
           ANSPIRE_LLM_MODEL: ${{ vars.ANSPIRE_LLM_MODEL || secrets.ANSPIRE_LLM_MODEL }}
@@ -349,59 +350,59 @@ jobs:
           MX_PRIORITY: ${{ vars.MX_PRIORITY || secrets.MX_PRIORITY }}
           
           # ==========================================
-          # 通知渠道（可同时配置多个，全部推送）
+          # Notification channels (configure any number; all configured channels receive reports)
           # ==========================================
           
-          # 方式一：企业微信 Webhook
+          # Option 1: WeChat Work webhook
           WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
           WECHAT_MSG_TYPE: ${{ vars.WECHAT_MSG_TYPE || secrets.WECHAT_MSG_TYPE || 'markdown' }}
           
-          # 方式二：飞书 Webhook
+          # Option 2: Feishu webhook
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           FEISHU_WEBHOOK_SECRET: ${{ secrets.FEISHU_WEBHOOK_SECRET }}
           FEISHU_WEBHOOK_KEYWORD: ${{ vars.FEISHU_WEBHOOK_KEYWORD || secrets.FEISHU_WEBHOOK_KEYWORD }}
-          # 钉钉 Webhook
+          # DingTalk webhook
           DINGTALK_WEBHOOK_URL: ${{ secrets.DINGTALK_WEBHOOK_URL }}
           DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
-          # 方式三：Telegram
+          # Option 3: Telegram
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_MESSAGE_THREAD_ID: ${{ secrets.TELEGRAM_MESSAGE_THREAD_ID }}
           
-          # 方式四：邮件
+          # Option 4: Email
           EMAIL_SENDER: ${{ vars.EMAIL_SENDER || secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVERS: ${{ vars.EMAIL_RECEIVERS || secrets.EMAIL_RECEIVERS }}
-          EMAIL_SENDER_NAME: ${{ vars.EMAIL_SENDER_NAME || secrets.EMAIL_SENDER_NAME || 'daily_stock_analysis股票分析助手' }}
+          EMAIL_SENDER_NAME: ${{ vars.EMAIL_SENDER_NAME || secrets.EMAIL_SENDER_NAME || 'daily_stock_analysis Stock Assistant' }}
           
-          # 方式五：Pushover
+          # Option 5: Pushover
           PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
           PUSHOVER_API_TOKEN: ${{ secrets.PUSHOVER_API_TOKEN }}
 
-          # 方式五扩展：ntfy
+          # Option 5b: ntfy
           NTFY_URL: ${{ secrets.NTFY_URL }}
           NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
 
-          # 方式五扩展：Gotify
+          # Option 5c: Gotify
           GOTIFY_URL: ${{ secrets.GOTIFY_URL }}
           GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
           
-          # 方式六：PushPlus ⬅️ 新增！
+          # Option 6: PushPlus
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
           PUSHPLUS_TOPIC: ${{ vars.PUSHPLUS_TOPIC || secrets.PUSHPLUS_TOPIC }}
           
-          # 方式七：自定义 Webhook（钉钉、Bark、自建服务等）
+          # Option 7: Custom webhook (DingTalk, Bark, self-hosted services, ...)
           CUSTOM_WEBHOOK_URLS: ${{ secrets.CUSTOM_WEBHOOK_URLS }}
           CUSTOM_WEBHOOK_BEARER_TOKEN: ${{ secrets.CUSTOM_WEBHOOK_BEARER_TOKEN }}
           CUSTOM_WEBHOOK_BODY_TEMPLATE: ${{ vars.CUSTOM_WEBHOOK_BODY_TEMPLATE || secrets.CUSTOM_WEBHOOK_BODY_TEMPLATE }}
           WEBHOOK_VERIFY_SSL: ${{ vars.WEBHOOK_VERIFY_SSL || secrets.WEBHOOK_VERIFY_SSL || 'true' }}
           
-          # 方式八：Discord
+          # Option 8: Discord
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_MAIN_CHANNEL_ID: ${{ secrets.DISCORD_MAIN_CHANNEL_ID }}
           
-          # 方式九：飞书云文档
+          # Option 9: Feishu cloud docs
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_FOLDER_TOKEN: ${{ secrets.FEISHU_FOLDER_TOKEN }}
@@ -410,19 +411,19 @@ jobs:
           FEISHU_DOMAIN: ${{ vars.FEISHU_DOMAIN || secrets.FEISHU_DOMAIN }}
           FEISHU_SEND_AS_FILE: ${{ vars.FEISHU_SEND_AS_FILE || secrets.FEISHU_SEND_AS_FILE }}
 
-          # 方式十：AstrBot
+          # Option 10: AstrBot
           ASTRBOT_URL: ${{ secrets.ASTRBOT_URL }}
           ASTRBOT_TOKEN: ${{ secrets.ASTRBOT_TOKEN }}
 
-          # 方式十一：Server酱3
+          # Option 11: ServerChan 3
           SERVERCHAN3_SENDKEY: ${{ secrets.SERVERCHAN3_SENDKEY }}
 
-          # 方式十二：Slack
+          # Option 12: Slack
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
 
-          # 通知路由策略（留空时保持全部已配置渠道）
+          # Notification routing (empty = send to every configured channel)
           NOTIFICATION_REPORT_CHANNELS: ${{ vars.NOTIFICATION_REPORT_CHANNELS || secrets.NOTIFICATION_REPORT_CHANNELS }}
           NOTIFICATION_ALERT_CHANNELS: ${{ vars.NOTIFICATION_ALERT_CHANNELS || secrets.NOTIFICATION_ALERT_CHANNELS }}
           NOTIFICATION_SYSTEM_ERROR_CHANNELS: ${{ vars.NOTIFICATION_SYSTEM_ERROR_CHANNELS || secrets.NOTIFICATION_SYSTEM_ERROR_CHANNELS }}
@@ -434,15 +435,15 @@ jobs:
           NOTIFICATION_DAILY_DIGEST_ENABLED: ${{ vars.NOTIFICATION_DAILY_DIGEST_ENABLED || secrets.NOTIFICATION_DAILY_DIGEST_ENABLED || 'false' }}
 
           # ==========================================
-          # 自选股配置
+          # Watchlist
           # ==========================================
-          # 避免直接写入 STOCK_LIST，保留同名 Environment variables 的 runner 环境值。
+          # Do not write STOCK_LIST directly, so an Environment variable of the same name still wins on the runner.
           STOCK_LIST_CONFIG: ${{ vars.STOCK_LIST || secrets.STOCK_LIST }}
           MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'cn' }}
           MARKET_REVIEW_COLOR_SCHEME: ${{ vars.MARKET_REVIEW_COLOR_SCHEME || secrets.MARKET_REVIEW_COLOR_SCHEME || 'green_up' }}
           
           # ==========================================
-          # 运行配置 ⬅️ 新增！
+          # Run settings
           # ==========================================
           REPORT_TYPE: ${{ vars.REPORT_TYPE || secrets.REPORT_TYPE || 'simple' }}
           REPORT_LANGUAGE: ${{ vars.REPORT_LANGUAGE || secrets.REPORT_LANGUAGE || '' }}
@@ -451,126 +452,126 @@ jobs:
           MARKET_REVIEW_ENABLED: ${{ vars.MARKET_REVIEW_ENABLED || secrets.MARKET_REVIEW_ENABLED || 'true' }}
           ANALYSIS_DELAY: ${{ vars.ANALYSIS_DELAY || secrets.ANALYSIS_DELAY || '0' }}
           TRADING_DAY_CHECK_ENABLED: ${{ vars.TRADING_DAY_CHECK_ENABLED || secrets.TRADING_DAY_CHECK_ENABLED || 'true' }}
-          # 预测准确率记分卡（见 docs/prediction-scorecard.md）
+          # Prediction scorecard (see docs/prediction-scorecard.md)
           SCORECARD_WEEKDAY: ${{ vars.SCORECARD_WEEKDAY || '5' }}
           SCORECARD_DAYS: ${{ vars.SCORECARD_DAYS || '90' }}
           
           # ==========================================
-          # 系统配置
+          # System settings
           # ==========================================
           LOG_LEVEL: INFO
           MAX_WORKERS: ${{ vars.MAX_WORKERS || secrets.MAX_WORKERS || '1' }}
-          # 筹码分布：默认 false（云端接口不稳定）；需启用时在 Settings → Variables 添加 ENABLE_CHIP_DISTRIBUTION=true
+          # Chip distribution: off by default (cloud endpoints are unstable); add ENABLE_CHIP_DISTRIBUTION=true under Settings → Variables to enable
           ENABLE_CHIP_DISTRIBUTION: ${{ vars.ENABLE_CHIP_DISTRIBUTION || secrets.ENABLE_CHIP_DISTRIBUTION || 'false' }}
-          # 实时行情数据源优先级（腾讯有量比且稳定，推荐首选）
-          # 可选值: tencent, akshare_sina, efinance, akshare_em, tickflow, tushare
-          # 如果有 TickFlow 或 Tushare Pro，可按权限把 tickflow / tushare 放在更靠前位置
+          # Realtime quote source priority for A-shares (Tencent includes volume ratio and is stable)
+          # Options: tencent, akshare_sina, efinance, akshare_em, tickflow, tushare
+          # With TickFlow or Tushare Pro access, move tickflow / tushare earlier
           REALTIME_SOURCE_PRIORITY: ${{ vars.REALTIME_SOURCE_PRIORITY || 'tencent,akshare_sina,efinance,akshare_em' }}
           
         run: |
-          # 解析自选股配置：
-          # 1. Repository/Environment secrets 或 Repository variables（STOCK_LIST_CONFIG）
-          # 2. 同名 Environment variables 注入的 runner 环境变量（STOCK_LIST）
-          # 3. 最小默认值
+          # Resolve the watchlist:
+          # 1. Repository/Environment secrets or Repository variables (STOCK_LIST_CONFIG)
+          # 2. A runner environment variable injected from an Environment variable (STOCK_LIST)
+          # 3. A minimal default
           if [ -n "${STOCK_LIST_CONFIG:-}" ]; then
             export STOCK_LIST="$STOCK_LIST_CONFIG"
           elif [ -z "${STOCK_LIST:-}" ]; then
             export STOCK_LIST="600519"
           fi
 
-          # 处理 LITELLM YAML 配置文件
+          # Write the LITELLM YAML config file
           if [ -n "$LITELLM_CONFIG_YAML" ] && [ -n "$LITELLM_CONFIG" ]; then
-            echo "📝 使用 GitHub Actions Secrets/Variables 中的 LITELLM_CONFIG_YAML 配置"
-            # 确保目录存在
+            echo "📝 Using LITELLM_CONFIG_YAML from GitHub Actions Secrets/Variables"
+            # Make sure the directory exists
             mkdir -p "$(dirname "$LITELLM_CONFIG")"
-            # 写入配置文件（覆盖已有文件）
+            # Write the config file (overwrites any existing file)
             echo "$LITELLM_CONFIG_YAML" > "$LITELLM_CONFIG"
-            echo "✅ LITELLM 配置文件已写入: $LITELLM_CONFIG"
+            echo "✅ LITELLM config written to: $LITELLM_CONFIG"
           fi
 
-          # 判断运行模式
+          # Determine the run mode
           MODE="${{ github.event.inputs.mode || 'full' }}"
           
           echo "=========================================="
-          echo "🚀 A股自选股智能分析系统"
+          echo "🚀 AI stock watchlist analysis"
           echo "=========================================="
-          echo "⏰ 时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
-          echo "🎯 运行模式: $MODE"
-          echo "📊 自选股: $STOCK_LIST"
-          echo "📝 报告类型: $REPORT_TYPE"
+          echo "⏰ Time: $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S') IST"
+          echo "🎯 Run mode: $MODE"
+          echo "📊 Watchlist: $STOCK_LIST"
+          echo "📝 Report type: $REPORT_TYPE"
           echo ""
           echo "=========================================="
-          echo "📋 配置检查"
+          echo "📋 Configuration check"
           echo "=========================================="
-          echo "【AI 配置】"
+          echo "[AI]"
           if [ -n "$LITELLM_CONFIG" ] || [ -n "$LITELLM_API_KEY" ] || [ -n "$LITELLM_MODEL" ] || [ -n "$LLM_CHANNELS" ] || [ -n "$MODELFLARE_KEY" ] || [ -n "$LLM_MODELFLARE_API_KEY" ] || [ -n "$LLM_MODELFLARE_API_KEYS" ] || [ -n "$ANSPIRE_API_KEYS" ]; then
-            echo "  LiteLLM: ✅ 已配置"
+            echo "  LiteLLM: ✅ configured"
           else
-            echo "  LiteLLM: ❌ 未配置"
+            echo "  LiteLLM: ❌ not configured"
           fi
-          echo "  Gemini API Key: $([ -n "$GEMINI_API_KEY" ] && echo '✅ 已配置' || echo '❌ 未配置')"
-          echo "  DeepSeek Key:   $([ -n "$DEEPSEEK_API_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Modelflare Key: $([ -n "$MODELFLARE_KEY" ] || [ -n "$LLM_MODELFLARE_API_KEY" ] || [ -n "$LLM_MODELFLARE_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Anspire Key:    $([ -n "$ANSPIRE_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  AIHubMix Key:   $([ -n "$AIHUBMIX_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  OpenAI API Key: $([ -n "$OPENAI_API_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Anthropic Key:  $([ -n "$ANTHROPIC_API_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
+          echo "  Gemini API Key: $([ -n "$GEMINI_API_KEY" ] && echo '✅ configured' || echo '❌ not configured')"
+          echo "  DeepSeek Key:   $([ -n "$DEEPSEEK_API_KEY" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  Modelflare Key: $([ -n "$MODELFLARE_KEY" ] || [ -n "$LLM_MODELFLARE_API_KEY" ] || [ -n "$LLM_MODELFLARE_API_KEYS" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  Anspire Key:    $([ -n "$ANSPIRE_API_KEYS" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  AIHubMix Key:   $([ -n "$AIHUBMIX_KEY" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  OpenAI API Key: $([ -n "$OPENAI_API_KEY" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  Anthropic Key:  $([ -n "$ANTHROPIC_API_KEY" ] && echo '✅ configured' || echo '⚪ not configured')"
           echo ""
-          echo "【数据源】"
-          echo "  Tushare Token: $([ -n "$TUSHARE_TOKEN" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  TickFlow:      $([ -n "$TICKFLOW_API_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  FXMacroData:   $([ -n "$FXMACRODATA_API_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置（仅公开 USD 数据）')"
+          echo "[Data sources]"
+          echo "  Tushare Token: $([ -n "$TUSHARE_TOKEN" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  TickFlow:      $([ -n "$TICKFLOW_API_KEY" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  FXMacroData:   $([ -n "$FXMACRODATA_API_KEY" ] && echo '✅ configured' || echo '⚪ not configured (public USD data only)')"
           if [ -n "$LONGBRIDGE_APP_KEY" ] && [ -n "$LONGBRIDGE_APP_SECRET" ] && [ -n "$LONGBRIDGE_ACCESS_TOKEN" ]; then
-            echo "  Longbridge: ✅ 已配置（Legacy API Key）"
+            echo "  Longbridge: ✅ configured (legacy API key)"
           elif [ -n "$LONGBRIDGE_OAUTH_CLIENT_ID" ] || { [ -n "$LONGBRIDGE_APP_KEY" ] && [ -z "$LONGBRIDGE_ACCESS_TOKEN" ]; }; then
-            echo "  Longbridge: $([ -n "$LONGBRIDGE_OAUTH_TOKEN_CACHE_B64" ] && echo '✅ 已配置（OAuth token cache）' || echo '🟡 已配置 OAuth client，缺少 token cache')"
+            echo "  Longbridge: $([ -n "$LONGBRIDGE_OAUTH_TOKEN_CACHE_B64" ] && echo '✅ configured (OAuth token cache)' || echo '🟡 OAuth client configured, token cache missing')"
           else
-            echo "  Longbridge: ⚪ 未配置（仅 YFinance 等，无长桥调用）"
+            echo "  Longbridge: ⚪ not configured (YFinance etc. only, no Longbridge calls)"
           fi
           echo ""
-          echo "【搜索引擎】"
-          echo "  Bocha API Keys: $([ -n "$BOCHA_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Tavily API Keys: $([ -n "$TAVILY_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  SerpAPI Keys: $([ -n "$SERPAPI_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  MiniMax API Keys: $([ -n "$MINIMAX_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Brave API Keys: $([ -n "$BRAVE_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  SearXNG Base URLs: $([ -n "$SEARXNG_BASE_URLS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
+          echo "[Search]"
+          echo "  Bocha API Keys: $([ -n "$BOCHA_API_KEYS" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  Tavily API Keys: $([ -n "$TAVILY_API_KEYS" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  SerpAPI Keys: $([ -n "$SERPAPI_API_KEYS" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  MiniMax API Keys: $([ -n "$MINIMAX_API_KEYS" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  Brave API Keys: $([ -n "$BRAVE_API_KEYS" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  SearXNG Base URLs: $([ -n "$SEARXNG_BASE_URLS" ] && echo '✅ configured' || echo '⚪ not configured')"
           case "${SEARXNG_PUBLIC_INSTANCES_ENABLED,,}" in
             0|false|no|off)
-              echo "  SearXNG Public Instances: ❌ 已禁用"
+              echo "  SearXNG Public Instances: ❌ disabled"
               ;;
             "")
-              echo "  SearXNG Public Instances: ⚪ 默认关闭（公共实例普遍限流，如需启用请显式设为 true）"
+              echo "  SearXNG Public Instances: ⚪ default off (public instances are usually rate-limited; set to true explicitly to enable)"
               ;;
             *)
-              echo "  SearXNG Public Instances: ✅ 已启用"
+              echo "  SearXNG Public Instances: ✅ enabled"
               ;;
           esac
           echo ""
-          echo "【通知渠道】"
-          echo "  PushPlus: $([ -n "$PUSHPLUS_TOKEN" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  ntfy: $([ -n "$NTFY_URL" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Gotify: $([ -n "$GOTIFY_URL" ] && [ -n "$GOTIFY_TOKEN" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  企业微信: $([ -n "$WECHAT_WEBHOOK_URL" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  钉钉: $( [ -n "$DINGTALK_WEBHOOK_URL" ] && echo '✅ 已配置' || echo '⚪ 未配置' )"
-          echo "  飞书: $( ([ -n "$FEISHU_WEBHOOK_URL" ] || ([ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ] && [ -n "$FEISHU_CHAT_ID" ]) ) && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Telegram: $([ -n "$TELEGRAM_BOT_TOKEN" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Discord: $([ -n "$DISCORD_WEBHOOK_URL" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  AstrBot: $([ -n "$ASTRBOT_URL" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
-          echo "  Slack: $(([ -n "$SLACK_WEBHOOK_URL" ] || ([ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL_ID" ])) && echo '✅ 已配置' || echo '⚪ 未配置')"
+          echo "[Notifications]"
+          echo "  PushPlus: $([ -n "$PUSHPLUS_TOKEN" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  ntfy: $([ -n "$NTFY_URL" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  Gotify: $([ -n "$GOTIFY_URL" ] && [ -n "$GOTIFY_TOKEN" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  WeChat Work: $([ -n "$WECHAT_WEBHOOK_URL" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  DingTalk: $( [ -n "$DINGTALK_WEBHOOK_URL" ] && echo '✅ configured' || echo '⚪ not configured' )"
+          echo "  Feishu: $( ([ -n "$FEISHU_WEBHOOK_URL" ] || ([ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ] && [ -n "$FEISHU_CHAT_ID" ]) ) && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  Telegram: $([ -n "$TELEGRAM_BOT_TOKEN" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  Discord: $([ -n "$DISCORD_WEBHOOK_URL" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  AstrBot: $([ -n "$ASTRBOT_URL" ] && echo '✅ configured' || echo '⚪ not configured')"
+          echo "  Slack: $(([ -n "$SLACK_WEBHOOK_URL" ] || ([ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL_ID" ])) && echo '✅ configured' || echo '⚪ not configured')"
           echo "=========================================="
           echo ""
           
-          # 构建命令行参数
+          # Build command-line arguments
           FORCE_RUN_ARG=""
           if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
             FORCE_RUN_ARG="--force-run"
-            echo "⚡ 已启用强制运行模式（跳过交易日检查）"
+            echo "⚡ Force-run mode enabled (trading-day check skipped)"
           fi
 
-          # 执行分析
+          # Run the analysis
           if [ "$MODE" = "scorecard" ]; then
-            echo "📊 仅运行预测准确率记分卡"
+            echo "📊 Running the prediction scorecard only"
           elif [ "$MODE" = "market-only" ]; then
             python main.py --market-review $FORCE_RUN_ARG
           elif [ "$MODE" = "stocks-only" ]; then
@@ -579,23 +580,23 @@ jobs:
             python main.py $FORCE_RUN_ARG
           fi
 
-          # 预测准确率记分卡：每周一次（默认周五，按印度时间判断），或手动选择 scorecard 模式。
-          # 仓库变量 SCORECARD_WEEKDAY：1-7（周一=1），设为 off 关闭每周推送。
-          # 记分卡失败不影响当日分析结果。
+          # Prediction scorecard: once a week (Friday by default, judged in India time), or via the manual scorecard mode.
+          # Repository variable SCORECARD_WEEKDAY: 1-7 (Monday = 1), or off to disable the weekly push.
+          # A scorecard failure never affects the day's analysis.
           SCORECARD_WEEKDAY="${SCORECARD_WEEKDAY:-5}"
           TODAY_WEEKDAY="$(TZ=Asia/Kolkata date +%u)"
           if [ "$MODE" = "scorecard" ] || { [ "$SCORECARD_WEEKDAY" != "off" ] && [ "$TODAY_WEEKDAY" = "$SCORECARD_WEEKDAY" ]; }; then
-            python main.py --scorecard --scorecard-days "${SCORECARD_DAYS:-90}" || echo "⚠️ 记分卡运行失败（不影响当日分析）"
+            python main.py --scorecard --scorecard-days "${SCORECARD_DAYS:-90}" || echo "⚠️ Scorecard failed (the day's analysis is unaffected)"
           fi
       
-      - name: 保存分析数据库
+      - name: Save analysis database
         if: always() && hashFiles('data/stock_analysis.db') != ''
         uses: actions/cache/save@v4
         with:
           path: data/stock_analysis.db
           key: dsa-db-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: 上传分析报告
+      - name: Upload analysis reports
         uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -605,21 +606,21 @@ jobs:
             logs/
           retention-days: 30
       
-      - name: 显示运行结果
+      - name: Show run results
         if: always()
         run: |
           echo ""
           echo "=========================================="
-          echo "📊 分析完成"
+          echo "📊 Analysis finished"
           echo "=========================================="
           if [ -d "reports" ] && [ "$(ls -A reports 2>/dev/null)" ]; then
-            echo "生成的报告:"
+            echo "Generated reports:"
             ls -la reports/
           else
-            echo "⚠️ 未生成报告文件"
+            echo "⚠️ No report files were generated"
           fi
           echo ""
           if [ -f "logs/stock_analysis_$(date +%Y%m%d).log" ]; then
-            echo "📜 最近日志（最后 30 行）:"
-            tail -30 logs/stock_analysis_*.log 2>/dev/null || echo "无日志"
+            echo "📜 Recent log (last 30 lines):"
+            tail -30 logs/stock_analysis_*.log 2>/dev/null || echo "No log"
           fi

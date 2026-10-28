@@ -464,7 +464,7 @@ git push
 #### 4. 手动测试运行
 
 1. 打开仓库页面 → **Actions** 标签
-2. 选择 **"每日股票分析"** workflow
+2. 选择 **"Daily Stock Analysis"** workflow
 3. 点击 **"Run workflow"** 按钮
 4. 选择运行模式：
    - `full` - 完整分析（股票+大盘）
