@@ -769,6 +769,18 @@ class PredictionScorecardService:
         return scorecard
 
 
+def default_fetcher_manager() -> Any:
+    """Data fetcher used to refresh daily bars; ``None`` (stored data only) if unavailable."""
+
+    try:
+        from data_provider import DataFetcherManager
+
+        return DataFetcherManager()
+    except Exception as exc:  # noqa: BLE001 - scoring stored data still works
+        logger.warning("[scorecard] data fetcher unavailable, skipping bar refresh: %s", exc)
+        return None
+
+
 def run_prediction_scorecard(
     config: Any,
     *,
@@ -783,12 +795,7 @@ def run_prediction_scorecard(
     """CLI entry (``python main.py --scorecard``): build, save and optionally push."""
 
     if fetcher_manager is None:
-        try:
-            from data_provider import DataFetcherManager
-
-            fetcher_manager = DataFetcherManager()
-        except Exception as exc:  # noqa: BLE001 - scoring stored data still works
-            logger.warning("[scorecard] data fetcher unavailable, skipping bar refresh: %s", exc)
+        fetcher_manager = default_fetcher_manager()
 
     service = PredictionScorecardService(
         db_manager=db_manager,

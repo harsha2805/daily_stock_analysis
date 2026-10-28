@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 新增自包含 HTML 看板 `python main.py --dashboard`（`reports/dashboard_YYYYMMDD.html`，无需服务器/网络/脚本）：今日各股建议卡片（动作、评分、置信度、买入区间/止损/目标与 30 日走势迷你图）、预测记分卡图表（命中率、跑赢指数、置信度检验、按个股）与可折叠完整报告；配置 Telegram 时以文件发送（`--no-notify` 仅保存，当日无新分析时不重复发送）。每日 GitHub Actions 运行后自动生成，仓库变量 `DASHBOARD_TELEGRAM=false` 可关闭 Telegram 发送。
 - [修复] 预测准确率记分卡按「个股 + 交易日 + 评估窗口」去重，同一天多次运行（如手动运行 + 延迟的定时运行）只统计当天最后一次信号，避免命中率与样本量被重复计算。
 - [新功能] 大盘复盘新增印度市场 `MARKET_REVIEW_REGION=in`（Nifty 50 / BSE Sensex / Nifty Bank，XBOM 交易日历，英文新闻查询与印度市场策略框架）；`both` 仍只包含 cn/hk/us/jp/kr，印度需显式开启。
 - [修复] 自选及其他无关配置保存不再被已有 LLM 渠道或模型错误阻断，模型相关修改仍校验完整依赖；仅更新自选时保留运行时单例与容器环境覆盖，并补齐增删、删空和校验回归。凡本次保存会启用 Agent 路径的，同样校验完整模型依赖：切到 LiteLLM Agent 后端（`AGENT_BACKEND` / `AGENT_GENERATION_BACKEND` 解析为 litellm）、开启 Agent 分析（`AGENT_MODE=true`）、或配置了非 `all` 的 `AGENT_SKILLS`——后两者走普通分析的 Agent 分支，自带 `LLMToolAdapter`，不受 `AGENT_BACKEND` 决定。仅关闭 `AGENT_MODE`、将 `AGENT_SKILLS` 设为 `all` 或空值、以及无关键保存仍不受 LLM 配置影响；显式保存或导入已退役的 `codex_app_server` 仍被拒绝。

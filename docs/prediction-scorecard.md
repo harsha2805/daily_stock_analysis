@@ -75,10 +75,34 @@ The daily workflow (`.github/workflows/00-daily-analysis.yml`):
   variable `SCORECARD_WEEKDAY` to `1`–`7` (Monday = 1) to change the day, or `off` to
   disable the weekly push. `SCORECARD_DAYS` sets the lookback (default 90).
 - adds a `scorecard` option to the manual **Run workflow** menu to run it on demand.
+- **builds the HTML dashboard after every run** and sends it to Telegram. Set the repository
+  variable `DASHBOARD_TELEGRAM` to `false` to keep it in the run's artifact only.
 - is scheduled at UTC 10:45 (16:15 India time, 18:45 Beijing time), after the
   NSE/BSE close.
 
 A scorecard failure never fails the day's analysis.
+
+## HTML dashboard
+
+`python main.py --dashboard` writes `reports/dashboard_YYYYMMDD.html`, one self-contained
+page that opens in any browser (phone or desktop), with no server, network or scripts:
+
+- **Today's calls**: one card per stock with the action (buy / hold / watch / sell …),
+  score, confidence and window, the latest close and daily change, and a 30-session price
+  sparkline marking the entry zone (blue band), stop-loss (red dashed) and target (green
+  dashed). Cards link to the stock's full analysis further down.
+- **Prediction scorecard** as charts: hit rate, beat-the-index rate and average edge tiles,
+  then bars for hit rate by window, confidence check and per stock (the 50% line is a coin
+  flip). Until calls have had time to play out it shows how many calls are being tracked.
+- **Full reports**: the day's market recap and each stock's report, collapsible.
+
+The page follows `REPORT_LANGUAGE` (English or Chinese) and the system light/dark theme. Raw
+HTML inside report text is escaped and a strict Content-Security-Policy blocks scripts.
+
+If Telegram is configured, the file is also sent to the chat as a document (tap it to open in
+the browser). Pass `--no-notify` to only save it. When no new analysis ran that day (for
+example a market holiday), the file is saved but not sent, so old calls are not repeated.
+`--scorecard-days` sets the scorecard lookback, as for `--scorecard`.
 
 ## Limits
 

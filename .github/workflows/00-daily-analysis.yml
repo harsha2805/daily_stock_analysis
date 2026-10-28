@@ -455,6 +455,8 @@ jobs:
           # Prediction scorecard (see docs/prediction-scorecard.md)
           SCORECARD_WEEKDAY: ${{ vars.SCORECARD_WEEKDAY || '5' }}
           SCORECARD_DAYS: ${{ vars.SCORECARD_DAYS || '90' }}
+          # HTML dashboard (see docs/prediction-scorecard.md): set to false to keep it in the artifact only
+          DASHBOARD_TELEGRAM: ${{ vars.DASHBOARD_TELEGRAM || 'true' }}
           
           # ==========================================
           # System settings
@@ -588,6 +590,15 @@ jobs:
           if [ "$MODE" = "scorecard" ] || { [ "$SCORECARD_WEEKDAY" != "off" ] && [ "$TODAY_WEEKDAY" = "$SCORECARD_WEEKDAY" ]; }; then
             python main.py --scorecard --scorecard-days "${SCORECARD_DAYS:-90}" || echo "⚠️ Scorecard failed (the day's analysis is unaffected)"
           fi
+
+          # HTML dashboard: one self-contained page (today's calls, scorecard charts, full reports),
+          # saved to reports/ (part of the run's artifact) and sent to Telegram as a file.
+          # Repository variable DASHBOARD_TELEGRAM=false keeps it in the artifact only.
+          DASHBOARD_ARGS="--dashboard --scorecard-days ${SCORECARD_DAYS:-90}"
+          if [ "${DASHBOARD_TELEGRAM:-true}" = "false" ]; then
+            DASHBOARD_ARGS="$DASHBOARD_ARGS --no-notify"
+          fi
+          python main.py $DASHBOARD_ARGS || echo "⚠️ Dashboard failed (the day's analysis is unaffected)"
       
       - name: Save analysis database
         if: always() && hashFiles('data/stock_analysis.db') != ''

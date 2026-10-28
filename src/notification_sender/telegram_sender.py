@@ -5,6 +5,7 @@ Telegram 发送提醒服务
 职责：
 1. 通过 Telegram Bot API 发送 文本消息
 2. 通过 Telegram Bot API 发送 图片消息
+3. 通过 Telegram Bot API 发送 文件（如 HTML 看板）
 """
 import logging
 from typing import Optional
@@ -363,6 +364,38 @@ class TelegramSender:
             return False
         except Exception as e:
             logger.error("Telegram 图片发送异常: %s", e)
+            return False
+
+    def send_telegram_document(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        *,
+        caption: Optional[str] = None,
+        mime_type: str = "text/html",
+    ) -> bool:
+        """Send a file via Telegram sendDocument (e.g. the HTML dashboard)."""
+        if not self._is_telegram_configured():
+            return False
+        bot_token = self._telegram_config['bot_token']
+        chat_id = self._telegram_config['chat_id']
+        message_thread_id = self._telegram_config.get('message_thread_id')
+        api_url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+        try:
+            data = {"chat_id": chat_id}
+            if caption:
+                data["caption"] = caption[:1024]
+            if message_thread_id:
+                data['message_thread_id'] = message_thread_id
+            files = {"document": (filename, file_bytes, mime_type)}
+            response = requests.post(api_url, data=data, files=files, timeout=60)
+            if response.status_code == 200 and response.json().get('ok'):
+                logger.info("Telegram 文件发送成功: %s", filename)
+                return True
+            logger.error("Telegram 文件发送失败: %s", response.text[:200])
+            return False
+        except Exception as e:
+            logger.error("Telegram 文件发送异常: %s", type(e).__name__)
             return False
 
     def _convert_to_telegram_markdown(self, text: str) -> str:

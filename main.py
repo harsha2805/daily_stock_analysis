@@ -493,6 +493,16 @@ def parse_arguments() -> argparse.Namespace:
         help='记分卡回看天数（默认 90） / Scorecard lookback window in days (default 90)'
     )
 
+    parser.add_argument(
+        '--dashboard',
+        action='store_true',
+        help=(
+            '生成 HTML 看板 reports/dashboard_YYYYMMDD.html（今日建议、记分卡图表、完整报告），'
+            '并通过 Telegram 发送文件（--no-notify 只保存，不调用 LLM） / Build the self-contained HTML '
+            'dashboard and send it to Telegram as a file (--no-notify to only save); no LLM calls'
+        )
+    )
+
     return parser.parse_args()
 
 
@@ -1596,7 +1606,8 @@ def _skips_stock_entry(args: argparse.Namespace, config: Config) -> bool:
     ``--stocks``/``STOCK_LIST`` tokens nor refresh the stock-index registry
     before the mode dispatch, otherwise an unsupported index token would
     wrongly block a run that never consumes it. Covered modes:
-    ``--backtest``, ``--market-review``, ``--etf-rotation``, ``--serve-only``/``--webui-only``,
+    ``--backtest``, ``--market-review``, ``--etf-rotation``, ``--scorecard``, ``--dashboard``,
+    ``--serve-only``/``--webui-only``,
     ``--portfolio`` (any value) and ``--schedule``/``config.schedule_enabled``.
     ``--serve`` (not serve-only) and plain one-shot runs still consume the
     stock list and stay outside the guard. The webui-only flag is read
@@ -1606,6 +1617,8 @@ def _skips_stock_entry(args: argparse.Namespace, config: Config) -> bool:
     return bool(
         getattr(args, "backtest", False)
         or getattr(args, "etf_rotation", False)
+        or getattr(args, "scorecard", False)
+        or getattr(args, "dashboard", False)
         or getattr(args, "market_review", False)
         or getattr(args, "serve_only", False)
         or getattr(args, "webui_only", False)
@@ -1922,6 +1935,22 @@ def main() -> int:
                 headline.get("hit_rate_pct"),
                 headline.get("beat_rate_pct"),
                 scorecard.get("evaluation"),
+            )
+            return 0
+
+        # 模式0.45: HTML 看板（不调用 LLM）
+        if getattr(args, 'dashboard', False):
+            logger.info("模式: HTML 看板")
+            from src.services.html_dashboard_service import run_html_dashboard
+
+            result = run_html_dashboard(
+                config,
+                send_notification=not args.no_notify,
+                lookback_days=max(1, int(getattr(args, 'scorecard_days', 90) or 90)),
+            )
+            logger.info(
+                "看板完成: path=%s calls=%s reports=%s sent=%s",
+                result.get("path"), result.get("calls"), result.get("reports"), result.get("sent"),
             )
             return 0
 

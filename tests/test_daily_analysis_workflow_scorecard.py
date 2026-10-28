@@ -49,3 +49,14 @@ def test_scorecard_mode_and_weekly_schedule_are_wired() -> None:
     cron = triggers["schedule"][0]["cron"]
     minute, hour = cron.split()[:2]
     assert int(hour) * 60 + int(minute) > 10 * 60
+
+
+def test_dashboard_is_built_after_every_run_and_can_skip_telegram() -> None:
+    text, _doc = _load()
+    assert "DASHBOARD_TELEGRAM: ${{ vars.DASHBOARD_TELEGRAM || 'true' }}" in text
+    assert 'DASHBOARD_ARGS="--dashboard --scorecard-days ${SCORECARD_DAYS:-90}"' in text
+    assert 'DASHBOARD_ARGS="$DASHBOARD_ARGS --no-notify"' in text
+    # A dashboard failure must never fail the day's run.
+    assert 'python main.py $DASHBOARD_ARGS || echo' in text
+    # The dashboard runs after the scorecard so it reflects the newest grades.
+    assert text.index("python main.py --scorecard") < text.index("python main.py $DASHBOARD_ARGS")
