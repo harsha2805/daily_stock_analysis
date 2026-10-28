@@ -1,9 +1,10 @@
 name: 每日股票分析
 
 on:
-  # 定时触发 - 每天北京时间 18:00 (UTC 10:00)
+  # 定时触发 - 每天 UTC 10:45 = 北京时间 18:45 = 印度时间 16:15
+  # （A 股收盘后，且晚于 NSE/BSE 15:30 收盘，保证印度股日线已定稿）
   schedule:
-    - cron: '0 10 * * 1-5'     # 周一到周五，UTC 10:00 = 北京时间 18:00
+    - cron: '45 10 * * 1-5'    # 周一到周五，UTC 10:45
   
   # 手动触发
   workflow_dispatch:
@@ -17,6 +18,7 @@ on:
           - full          # 完整分析（股票+大盘）
           - market-only   # 仅大盘复盘
           - stocks-only   # 仅股票分析
+          - scorecard     # 仅运行预测准确率记分卡（不调用 LLM）
       force_run:
         description: '强制运行（跳过交易日检查）'
         required: false
@@ -59,6 +61,18 @@ jobs:
       - name: 创建必要目录
         run: |
           mkdir -p data logs reports
+
+      # 预测准确率记分卡需要跨次运行的历史数据（AI 建议 + 日线）。
+      # GitHub Actions 每次都是全新环境，因此用 Actions cache 滚动保存 SQLite 数据库：
+      # 恢复最近一次保存的版本，运行结束后以新 key 再保存。
+      # 每个工作日都会重新保存（休市日也会），7 天未访问才会被回收，正常节奏下不会过期。
+      - name: 恢复分析数据库
+        uses: actions/cache/restore@v4
+        with:
+          path: data/stock_analysis.db
+          key: dsa-db-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            dsa-db-${{ github.ref_name }}-
       
       - name: 执行股票分析
         env:
@@ -437,6 +451,9 @@ jobs:
           MARKET_REVIEW_ENABLED: ${{ vars.MARKET_REVIEW_ENABLED || secrets.MARKET_REVIEW_ENABLED || 'true' }}
           ANALYSIS_DELAY: ${{ vars.ANALYSIS_DELAY || secrets.ANALYSIS_DELAY || '0' }}
           TRADING_DAY_CHECK_ENABLED: ${{ vars.TRADING_DAY_CHECK_ENABLED || secrets.TRADING_DAY_CHECK_ENABLED || 'true' }}
+          # 预测准确率记分卡（见 docs/prediction-scorecard.md）
+          SCORECARD_WEEKDAY: ${{ vars.SCORECARD_WEEKDAY || '5' }}
+          SCORECARD_DAYS: ${{ vars.SCORECARD_DAYS || '90' }}
           
           # ==========================================
           # 系统配置
@@ -552,14 +569,32 @@ jobs:
           fi
 
           # 执行分析
-          if [ "$MODE" = "market-only" ]; then
+          if [ "$MODE" = "scorecard" ]; then
+            echo "📊 仅运行预测准确率记分卡"
+          elif [ "$MODE" = "market-only" ]; then
             python main.py --market-review $FORCE_RUN_ARG
           elif [ "$MODE" = "stocks-only" ]; then
             python main.py --no-market-review $FORCE_RUN_ARG
           else
             python main.py $FORCE_RUN_ARG
           fi
+
+          # 预测准确率记分卡：每周一次（默认周五，按印度时间判断），或手动选择 scorecard 模式。
+          # 仓库变量 SCORECARD_WEEKDAY：1-7（周一=1），设为 off 关闭每周推送。
+          # 记分卡失败不影响当日分析结果。
+          SCORECARD_WEEKDAY="${SCORECARD_WEEKDAY:-5}"
+          TODAY_WEEKDAY="$(TZ=Asia/Kolkata date +%u)"
+          if [ "$MODE" = "scorecard" ] || { [ "$SCORECARD_WEEKDAY" != "off" ] && [ "$TODAY_WEEKDAY" = "$SCORECARD_WEEKDAY" ]; }; then
+            python main.py --scorecard --scorecard-days "${SCORECARD_DAYS:-90}" || echo "⚠️ 记分卡运行失败（不影响当日分析）"
+          fi
       
+      - name: 保存分析数据库
+        if: always() && hashFiles('data/stock_analysis.db') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/stock_analysis.db
+          key: dsa-db-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
         if: always()

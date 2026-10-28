@@ -476,6 +476,23 @@ def parse_arguments() -> argparse.Namespace:
         help='运行 ETF 轮动：输出最新调仓信号与规则回测报告（不调用 LLM，配置见 ETF_ROTATION_*）'
     )
 
+    parser.add_argument(
+        '--scorecard',
+        action='store_true',
+        help=(
+            '运行预测准确率记分卡：评估历史 AI 建议的命中率、是否跑赢大盘指数、置信度是否有效，'
+            '并推送报告（不调用 LLM） / Run the prediction scorecard (hit rate, beat-the-index, '
+            'confidence check); no LLM calls'
+        )
+    )
+
+    parser.add_argument(
+        '--scorecard-days',
+        type=int,
+        default=90,
+        help='记分卡回看天数（默认 90） / Scorecard lookback window in days (default 90)'
+    )
+
     return parser.parse_args()
 
 
@@ -1884,6 +1901,27 @@ def main() -> int:
             logger.info(
                 f"回测完成: processed={stats.get('processed')} saved={stats.get('saved')} "
                 f"completed={stats.get('completed')} insufficient={stats.get('insufficient')} errors={stats.get('errors')}"
+            )
+            return 0
+
+        # 模式0.4: 预测准确率记分卡（不调用 LLM）
+        if getattr(args, 'scorecard', False):
+            logger.info("模式: 预测准确率记分卡")
+            from src.services.prediction_scorecard_service import run_prediction_scorecard
+
+            scorecard = run_prediction_scorecard(
+                config,
+                send_notification=not args.no_notify,
+                lookback_days=max(1, int(getattr(args, 'scorecard_days', 90) or 90)),
+            )
+            headline = scorecard.get("headline") or {}
+            logger.info(
+                "记分卡完成: window=%s checked=%s hit_rate=%s beat_rate=%s evaluation=%s",
+                scorecard.get("headline_horizon"),
+                headline.get("total"),
+                headline.get("hit_rate_pct"),
+                headline.get("beat_rate_pct"),
+                scorecard.get("evaluation"),
             )
             return 0
 

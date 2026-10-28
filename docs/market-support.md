@@ -122,6 +122,25 @@ PY
 
 回滚方式：移除 `tw` 市场识别、交易日历注册、YFinance 路由扩展、三大法人资料层/报告消费、TWD 标注、服务层/API 市场枚举及前端市场类型放行，并删除本文档中的能力声明。
 
+## 印度个股支持（suffix-only，NSE `.NS` / BSE `.BO`）
+
+印度股票使用 Yahoo Finance 后缀代码：NSE 上市 `RELIANCE.NS`、`M&M.NS`、`BAJAJ-AUTO.NS`，BSE 上市 `500180.BO` 或 `RELIANCE.BO`。
+
+- **严格 suffix-only**：只有带 `.NS` / `.BO` 后缀的代码才识别为印度股（市场代码 `in`）。裸 `RELIANCE` / `500180` 保持原有语义，不会进入印度链路。
+- 与日韩台不同，印度代码的 base 是股票符号而非数字：`market_symbol_utils` 的 `SuffixMarketSpec` 新增 `base_pattern`，印度规则允许大写字母、数字、`&`、`-`（首字符须为字母或数字，最长 20 位）。短代码如 `ITC.NS` 不会被误判为美股，长代码如 `YESBANK.NS` 也不会回落到 A 股。
+- 日线、实时行情与基本面只走 `YfinanceFetcher`（代码原样传给 Yahoo），不尝试 AkShare、Tushare、Efinance 等 A 股数据源；报价币种取 Yahoo 返回的 `INR`，通知金额后缀显示“卢比”。
+- 交易日历：`exchange-calendars` 没有 XNSE，使用与 NSE 交易时段（09:15–15:30 IST）和休市日一致的 `XBOM`，时区 `Asia/Kolkata`；NSE/BSE 盘内无收盘集合竞价，收盘集合竞价窗口为 0。
+- LLM Prompt 按印度市场语境分析：卢比汇率、RBI 政策、FII/FPI 与 DII 资金流、SEBI 监管与 ASM/GSM、个股价格带（circuit）、T+1 结算、Nifty 50 / Sensex 大盘环境，并明确不套用 A 股涨跌停、北向资金、龙虎榜等概念。
+- `YfinanceFetcher.get_main_indices(region="in")` 返回 Nifty 50（`^NSEI`）、BSE Sensex（`^BSESN`）、Nifty Bank（`^NSEBANK`）。
+- `in` 已加入 DecisionSignal、持仓、情报写入路径的合法市场，确保每日分析自动提取的决策信号不会因市场校验失败被丢弃（预测准确率记分卡依赖这些信号，见 [prediction-scorecard.md](prediction-scorecard.md)）。
+
+当前边界：
+
+- 印度大盘复盘（`MARKET_REVIEW_REGION=in`）、Market Light 告警、Web 自动补全的印度股票索引、数据能力诊断页的印度条目尚未接入；`MARKET_REVIEW_REGION` 仍只接受 `cn/hk/us/jp/kr/both` 及其逗号子集。
+- 印度市场的资金流、龙虎榜、板块等 A 股专属基本面块保持 `not_supported`。
+
+回滚方式：从 `_SUFFIX_MARKET_SPECS` 移除 `in` 规则，并回退 `MARKET_EXCHANGE` / `MARKET_TIMEZONE`、`VALID_MARKETS` 与 API 市场枚举中的 `in`。
+
 ## 日本/韩国 Portfolio 与 Market Light 边界（Issue #1815 Phase 3）
 
 Portfolio 允许 JP/KR 账户、交易和持仓快照进入现有链路，但会将账户/持仓快照标记为 `data_quality=partial`，并通过 `limitations` 明确 `realtime_quote_best_effort`、`fx_and_cost_basis_partial`、`sector_and_risk_metrics_limited`；不承诺 JPY/KRW 汇率、成本、市值、行业集中度或组合风险指标完整口径。
