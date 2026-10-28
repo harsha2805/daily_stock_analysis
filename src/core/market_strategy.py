@@ -229,6 +229,39 @@ KR_BLUEPRINT = MarketStrategyBlueprint(
     ],
 )
 
+IN_BLUEPRINT = MarketStrategyBlueprint(
+    region="in",
+    title="印度市场三段式复盘策略",
+    positioning="聚焦 Nifty 50、Sensex、Nifty Bank 与外资（FII）/国内机构（DII）资金流，形成次日交易计划。",
+    principles=[
+        "先看 Nifty 50 与 Sensex 是否同向，再看 Nifty Bank 等权重板块是否确认。",
+        "区分指数 beta、银行与 IT 权重、以及中小盘风险偏好的贡献。",
+        "只基于可得指数、新闻和价格行为判断，不臆造市场广度、板块统计或资金流数字。",
+    ],
+    dimensions=[
+        StrategyDimension(
+            name="趋势结构",
+            objective="判断印度市场处于上攻、震荡还是防守阶段。",
+            checkpoints=["Nifty 50 / Sensex 是否同向", "Nifty Bank 是否支撑指数", "关键支撑阻力是否被突破"],
+        ),
+        StrategyDimension(
+            name="资金与宏观",
+            objective="识别外资与国内机构资金、卢比汇率和 RBI 政策对风险偏好的影响。",
+            checkpoints=["FII/DII 净买卖方向（仅限新闻提及）", "卢比汇率与原油价格", "RBI 利率与通胀叙事"],
+        ),
+        StrategyDimension(
+            name="主题线索",
+            objective="提炼可延续主线与需要规避的拥挤方向。",
+            checkpoints=["银行/IT/能源/国防等板块轮动", "中小盘与 PSU 股风险偏好", "新闻催化是否支撑价格行为"],
+        ),
+    ],
+    action_framework=[
+        "进攻：Nifty 50/Sensex 共振上行 + 银行权重确认 + 资金面改善。",
+        "均衡：指数分化或外资流出，控制仓位并等待确认。",
+        "防守：主要指数转弱或卢比/原油风险升温，优先控制回撤。",
+    ],
+)
+
 def get_market_strategy_blueprint(region: str) -> MarketStrategyBlueprint:
     """Return strategy blueprint by market region."""
     if region == "us":
@@ -239,4 +272,6 @@ def get_market_strategy_blueprint(region: str) -> MarketStrategyBlueprint:
         return JP_BLUEPRINT
     if region == "kr":
         return KR_BLUEPRINT
+    if region == "in":
+        return IN_BLUEPRINT
     return CN_BLUEPRINT

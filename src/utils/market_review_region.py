@@ -4,9 +4,13 @@
 from typing import Optional
 
 
-MARKET_REVIEW_REGION_ORDER = ("cn", "hk", "us", "jp", "kr")
+MARKET_REVIEW_REGION_ORDER = ("cn", "hk", "us", "jp", "kr", "in")
 MARKET_REVIEW_REGION_SET = frozenset(MARKET_REVIEW_REGION_ORDER)
-MARKET_REVIEW_REGION_ALL = ",".join(MARKET_REVIEW_REGION_ORDER)
+# ``both`` keeps its historical meaning (the five markets it covered before
+# India was added) so existing MARKET_REVIEW_REGION=both setups do not start
+# receiving an extra Indian recap. India must be requested explicitly (``in``).
+MARKET_REVIEW_REGION_BOTH = ("cn", "hk", "us", "jp", "kr")
+MARKET_REVIEW_REGION_ALL = ",".join(MARKET_REVIEW_REGION_BOTH)
 MARKET_REVIEW_REGION_VALID_INPUTS = (*MARKET_REVIEW_REGION_ORDER, "both")
 
 
@@ -14,7 +18,8 @@ def normalize_market_review_region_lenient(value: Optional[str]) -> Optional[str
     """Normalize persistent config input while preserving legacy filtering.
 
     ``None`` and an empty string retain the historical ``cn`` default. Comma
-    lists keep only supported markets, and ``both`` expands to every market.
+    lists keep only supported markets, and ``both`` expands to the
+    original five markets (cn/hk/us/jp/kr; India is opt-in via ``in``).
     ``None`` is returned only when a non-defaultable value has no valid token.
     """
 
@@ -46,7 +51,7 @@ def normalize_market_review_region_strict(value: str) -> str:
     normalized = value.strip().lower()
     valid_hint = (
         f"{', '.join(MARKET_REVIEW_REGION_VALID_INPUTS)}，"
-        "或 cn/hk/us/jp/kr 的合法逗号分隔组合"
+        "或 cn/hk/us/jp/kr/in 的合法逗号分隔组合"
     )
     if not normalized:
         raise ValueError(f"region 不能为空；合法值：{valid_hint}")

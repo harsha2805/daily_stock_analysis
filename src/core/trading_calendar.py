@@ -659,15 +659,17 @@ def compute_effective_region(
     Compute effective market review region given config and open markets.
 
     Args:
-        config_region: From MARKET_REVIEW_REGION ('cn' | 'hk' | 'us' | 'jp' | 'kr' | 'both' or comma subset)
+        config_region: From MARKET_REVIEW_REGION ('cn' | 'hk' | 'us' | 'jp' | 'kr' | 'in' | 'both' or comma subset)
         open_markets: Markets open today
 
     Returns:
         None: caller uses config default (check disabled)
         '': all relevant markets closed, skip market review
-        'cn' | 'hk' | 'us' | 'jp' | 'kr' | 'both': effective subset for today
+        'cn' | 'hk' | 'us' | 'jp' | 'kr' | 'in' | 'both': effective subset for today
     """
-    markets = ("cn", "hk", "us", "jp", "kr")
+    markets = ("cn", "hk", "us", "jp", "kr", "in")
+    # ``both`` keeps its historical five-market meaning; India is opt-in.
+    both_markets = ("cn", "hk", "us", "jp", "kr")
     normalized = (config_region or "cn").strip().lower()
     if not normalized:
         normalized = "cn"
@@ -679,7 +681,7 @@ def compute_effective_region(
         requested = {"cn"}
 
     if "both" in requested:
-        requested = set(markets)
+        requested = set(both_markets)
     else:
         # Ignore invalid tokens and only keep known markets.
         requested = {item for item in requested if item in markets}

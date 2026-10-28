@@ -306,3 +306,38 @@ def test_english_market_snapshot_uses_english_volume_units() -> None:
     assert "亿" not in english["volume"]
     chinese = analyzer._build_market_snapshot(context)
     assert chinese["volume"] == "4.34 亿股"
+
+
+def test_market_review_region_accepts_india_without_changing_both() -> None:
+    from src.core.trading_calendar import compute_effective_region
+    from src.utils.market_review_region import (
+        normalize_market_review_region_lenient,
+        normalize_market_review_region_strict,
+    )
+
+    assert normalize_market_review_region_lenient("in") == "in"
+    assert normalize_market_review_region_lenient("in,cn") == "cn,in"
+    assert normalize_market_review_region_strict("IN") == "in"
+    # ``both`` keeps its historical five-market meaning; India is opt-in.
+    assert normalize_market_review_region_lenient("both") == "cn,hk,us,jp,kr"
+    assert normalize_market_review_region_strict("both") == "cn,hk,us,jp,kr"
+
+    assert compute_effective_region("in", {"in"}) == "in"
+    assert compute_effective_region("in", {"cn"}) == ""
+    assert compute_effective_region("both", {"cn", "hk", "us", "jp", "kr", "in"}) == "cn,hk,us,jp,kr"
+
+
+def test_india_market_review_profile_and_strategy() -> None:
+    from src.core.market_profile import get_profile
+    from src.core.market_strategy import get_market_strategy_blueprint
+
+    profile = get_profile("in")
+    assert profile.region == "in"
+    assert profile.mood_index_code == "NSEI"  # matches YfinanceFetcher's Nifty 50 code
+    assert profile.has_market_stats is False
+    assert profile.has_sector_rankings is False
+    assert any("Nifty" in query for query in profile.news_queries)
+
+    blueprint = get_market_strategy_blueprint("in")
+    assert blueprint.region == "in"
+    assert "Nifty" in blueprint.positioning

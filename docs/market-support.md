@@ -139,10 +139,19 @@ PY
 
 当前边界：
 
-- 印度大盘复盘（`MARKET_REVIEW_REGION=in`）、Market Light 告警、Web 自动补全的印度股票索引、数据能力诊断页的印度条目尚未接入；`MARKET_REVIEW_REGION` 仍只接受 `cn/hk/us/jp/kr/both` 及其逗号子集。
+- Market Light 告警、Web 自动补全的印度股票索引、数据能力诊断页的印度条目尚未接入；Web 首页大盘复盘的市场选择器暂不提供印度选项（可通过 `MARKET_REVIEW_REGION=in` 或 API `region=in` 触发）。
 - 印度市场的资金流、龙虎榜、板块等 A 股专属基本面块保持 `not_supported`。
 
-回滚方式：从 `_SUFFIX_MARKET_SPECS` 移除 `in` 规则，并回退 `MARKET_EXCHANGE` / `MARKET_TIMEZONE`、`VALID_MARKETS` 与 API 市场枚举中的 `in`。
+### 印度大盘复盘（`MARKET_REVIEW_REGION=in`）
+
+- `MARKET_REVIEW_REGION` 新增 `in`，可单独使用或放入逗号子集（如 `cn,in`），规范顺序为 `cn,hk,us,jp,kr,in`；API `POST /api/v1/analysis/market-review` 的 `region` 同样接受 `in`。
+- **`both` 语义不变**：仍只展开为 `cn,hk,us,jp,kr` 五个市场，不会自动加入印度，已有 `both` 配置的复盘范围、耗时与通知不受影响。
+- 指数：Nifty 50（`^NSEI`，作为整体情绪指数 `NSEI`）、BSE Sensex（`^BSESN`）、Nifty Bank（`^NSEBANK`），数据来自 YFinance。
+- 交易日：按 `XBOM / Asia/Kolkata` 判断，印度休市日自动跳过；`TRADING_DAY_CHECK_ENABLED=false` 时不过滤。
+- 新闻：使用英文查询（Nifty / Sensex / NSE / BSE / FII DII），需配置任一搜索服务（如 `TAVILY_API_KEYS`）才有新闻上下文，未配置时只基于指数行情生成复盘。
+- 报告：英文标题 `India Market Recap`，中文 `印度股大盘复盘`；策略框架聚焦 Nifty/Sensex 同向性、Nifty Bank 权重、FII/DII 资金（仅限新闻提及）、卢比/原油与 RBI 政策。不输出涨跌家数、涨跌停、板块排行等 A 股专属统计。
+
+回滚方式：从 `_SUFFIX_MARKET_SPECS` 移除 `in` 规则，并回退 `MARKET_EXCHANGE` / `MARKET_TIMEZONE`、`VALID_MARKETS` 与 API 市场枚举中的 `in`；大盘复盘部分从 `MARKET_REVIEW_REGION_ORDER`、`IN_PROFILE` / `IN_BLUEPRINT` 与 `_MARKET_REVIEW_MARKETS` 中移除 `in`。
 
 ## 日本/韩国 Portfolio 与 Market Light 边界（Issue #1815 Phase 3）
 
