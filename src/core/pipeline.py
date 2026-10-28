@@ -1965,7 +1965,7 @@ class StockAnalysisPipeline:
     def _get_analysis_context_with_market_fallback(
         self, code: str, analysis_target: Optional[AnalysisTarget] = None
     ) -> Optional[Dict[str, Any]]:
-        """Load analysis context, fetching JP/KR/TW daily bars when DB has no context."""
+        """Load analysis context, fetching JP/KR/TW/IN daily bars when DB has no context."""
         context = self.db.get_analysis_context(code)
         if isinstance(context, dict) and context:
             return context
@@ -1974,7 +1974,7 @@ class StockAnalysisPipeline:
             market = "cn"
         else:
             market = get_market_for_stock(normalize_stock_code(code))
-        if market not in {"jp", "kr", "tw"}:
+        if market not in {"jp", "kr", "tw", "in"}:
             return context
 
         try:

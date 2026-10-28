@@ -121,7 +121,7 @@ class StockProfileService:
                 "limit": 5,
                 "market_hint": market,
             }
-            if market in {"jp", "kr", "tw"}:
+            if market in {"jp", "kr", "tw", "in"}:
                 query_options["include_ambiguous_numeric_aliases"] = False
             result = self._history_service().get_history_list(**query_options)
             reports = list(result.get("items") or [])

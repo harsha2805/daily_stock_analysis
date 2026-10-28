@@ -30,8 +30,8 @@ except Exception:  # pragma: no cover - optional dependency path
     yf = None
 
 EPS = 1e-8
-VALID_MARKETS = {"cn", "hk", "us", "jp", "kr", "tw"}
-PARTIAL_VALUATION_MARKETS = {"jp", "kr", "tw"}
+VALID_MARKETS = {"cn", "hk", "us", "jp", "kr", "tw", "in"}
+PARTIAL_VALUATION_MARKETS = {"jp", "kr", "tw", "in"}
 VALID_COST_METHODS = {"fifo", "avg"}
 VALID_SIDES = {"buy", "sell"}
 VALID_CASH_DIRECTIONS = {"in", "out"}

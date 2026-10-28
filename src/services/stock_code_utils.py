@@ -237,6 +237,11 @@ def _normalize_code_and_exchange(raw: str) -> tuple[Optional[str], str]:
         return None, explicit_exchange
     suffix_symbol = normalize_suffix_market_symbol(text)
     if suffix_symbol is not None:
+        if not explicit_exchange:
+            # Suffix markets whose bases are not numeric (India ``.NS``/``.BO``)
+            # are not in ``_SUFFIX_DIGIT_LENS``; still report the Yahoo suffix as
+            # the explicit exchange so callers keep the foreign-suffix semantics.
+            explicit_exchange = suffix_symbol.rsplit(".", 1)[1]
         return suffix_symbol, explicit_exchange
     if any(text.endswith(suffix) for suffix in _PRESERVE_SUFFIXES):
         return None, explicit_exchange
@@ -455,7 +460,7 @@ def resolve_daily_stock_identity(
         candidates = [raw_code, normalized_code, refill_code]
         if suffix_base_lookup_allowed(normalized_code):
             candidates.append(normalized_code.rsplit(".", 1)[0])
-    if market not in {"jp", "kr", "tw"}:
+    if market not in {"jp", "kr", "tw", "in"}:
         for candidate in list(candidates):
             candidates.extend(
                 _build_market_code_variants(

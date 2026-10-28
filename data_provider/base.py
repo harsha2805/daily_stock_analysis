@@ -91,6 +91,8 @@ def normalize_stock_code(stock_code: str) -> str:
     - '005930.KS'   -> '005930.KS' (keep Korea Yahoo suffix form)
     - '2330.TW'     -> '2330.TW'  (keep Taiwan TWSE Yahoo suffix form)
     - '6505.TWO'    -> '6505.TWO' (keep Taiwan TPEx Yahoo suffix form)
+    - 'yesbank.ns'  -> 'YESBANK.NS' (keep India NSE Yahoo suffix form)
+    - '500180.BO'   -> '500180.BO' (keep India BSE Yahoo suffix form)
     - 'AAPL'        -> 'AAPL'     (keep US stock ticker as-is)
 
     This function is applied at the DataProviderManager layer so that
@@ -140,6 +142,9 @@ def normalize_stock_code(stock_code: str) -> str:
             return f"{base}.{suffix.upper()}"
         if suffix.upper() in ('TW', 'TWO') and base.isdigit() and 4 <= len(base) <= 6:
             return f"{base}.{suffix.upper()}"
+        if is_suffix_market_symbol(code, "in"):
+            # India: keep the NSE/BSE Yahoo suffix form (RELIANCE.NS / 500180.BO).
+            return f"{base.upper()}.{suffix.upper()}"
         if suffix.upper() == 'HK' and base.isdigit() and 1 <= len(base) <= 5:
             return f"HK{base.zfill(5)}"
         if base.upper() in ('SH', 'SS', 'SZ', 'BJ') and suffix.isdigit():
@@ -201,6 +206,14 @@ def _is_tw_market(code: str) -> bool:
     return is_suffix_market_symbol(code, "tw")
 
 
+def _is_in_market(code: str) -> bool:
+    """判定是否为印度 Yahoo Finance suffix 代码（NSE RELIANCE.NS / BSE 500180.BO）。
+
+    仅带 .NS/.BO 后缀的代码才识别为印度股票；裸代码保持原有语义。
+    """
+    return is_suffix_market_symbol(code, "in")
+
+
 def _is_etf_code(code: str) -> bool:
     """判定 A 股 ETF 基金代码（保守规则）。"""
     normalized = normalize_stock_code(code)
@@ -241,7 +254,9 @@ def _is_meaningful_chip_distribution(chip: Any) -> bool:
 
 
 def _market_tag(code: str) -> str:
-    """返回市场标签: cn/us/hk/jp/kr/tw."""
+    """返回市场标签: cn/us/hk/jp/kr/tw/in."""
+    if _is_in_market(code):
+        return "in"
     if _is_us_market(code):
         return "us"
     if _is_hk_market(code):
@@ -641,7 +656,7 @@ class DataFetcherManager:
         "MiaoxiangFetcher": set(),
         "PytdxFetcher": {"cn"},
         "BaostockFetcher": {"cn"},
-        "YfinanceFetcher": {"cn", "hk", "us", "jp", "kr", "tw"},
+        "YfinanceFetcher": {"cn", "hk", "us", "jp", "kr", "tw", "in"},
         "LongbridgeFetcher": {"hk", "us"},
         "FutuFetcher": {"hk"},
         "FinnhubFetcher": {"us"},
@@ -1984,7 +1999,11 @@ class DataFetcherManager:
         is_jp = (not is_us) and (not is_hk) and _is_jp_market(stock_code)
         is_kr = (not is_us) and (not is_hk) and _is_kr_market(stock_code)
         is_tw = (not is_us) and (not is_hk) and _is_tw_market(stock_code)
-        market = "us" if is_us else "hk" if is_hk else "jp" if is_jp else "kr" if is_kr else "tw" if is_tw else "cn"
+        is_in = (not is_us) and (not is_hk) and _is_in_market(stock_code)
+        market = (
+            "us" if is_us else "hk" if is_hk else "jp" if is_jp else "kr" if is_kr
+            else "tw" if is_tw else "in" if is_in else "cn"
+        )
         if market != "cn":
             fetchers = self._filter_daily_fetchers_for_market(fetchers, market)
         fetchers = self._filter_fetchers_by_capability(fetchers, capability="daily_data")
@@ -2489,9 +2508,10 @@ class DataFetcherManager:
         is_jp = (not is_us) and (not is_hk) and _is_jp_market(stock_code)
         is_kr = (not is_us) and (not is_hk) and _is_kr_market(stock_code)
         is_tw = (not is_us) and (not is_hk) and _is_tw_market(stock_code)
+        is_in = (not is_us) and (not is_hk) and _is_in_market(stock_code)
 
-        if is_jp or is_kr or is_tw:
-            market_label = "日股" if is_jp else "韩股" if is_kr else "台股"
+        if is_jp or is_kr or is_tw or is_in:
+            market_label = "日股" if is_jp else "韩股" if is_kr else "台股" if is_tw else "印度股"
             quote = self._try_fetcher_quote(stock_code, "YfinanceFetcher", **target_kwargs)
             if quote is not None:
                 logger.info(f"[实时行情] {market_label} {stock_code} 成功获取 (来源: YfinanceFetcher)")
@@ -4313,7 +4333,7 @@ class DataFetcherManager:
         stock_code = normalize_stock_code(stock_code)
         market = _market_tag(stock_code)
         is_etf = _is_etf_code(stock_code)
-        if market in {"us", "hk", "jp", "kr", "tw"}:
+        if market in {"us", "hk", "jp", "kr", "tw", "in"}:
             return self._build_offshore_fundamental_context(
                 stock_code,
                 market=market,

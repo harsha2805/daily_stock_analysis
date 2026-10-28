@@ -19,7 +19,7 @@ def detect_market(stock_code: Optional[str]) -> str:
     """Detect market from stock code.
 
     Returns:
-        One of 'cn', 'hk', 'us', or 'cn' as fallback.
+        One of 'cn', 'hk', 'us', 'jp', 'kr', 'tw', 'in', or 'cn' as fallback.
     """
     if not stock_code:
         return "cn"
@@ -77,6 +77,10 @@ _MARKET_ROLES = {
     "tw": {
         "zh": "台股",
         "en": "Taiwan stock",
+    },
+    "in": {
+        "zh": "印度股市",
+        "en": "Indian stock",
     },
 }
 
@@ -144,6 +148,21 @@ _MARKET_GUIDELINES = {
             "electronics-foundry supply chain, the three institutional investor groups (foreign / "
             "investment-trust / dealer), margin trading and day trading, and the TWSE/TPEx ±10% daily "
             "price limit; do not apply China A-share-specific concepts such as Northbound flows or Dragon Tiger lists."
+        ),
+    },
+    "in": {
+        "zh": (
+            "- 本次分析对象为 **印度股票**（印度国家证券交易所 NSE `.NS`，或孟买证券交易所 BSE `.BO`），以印度卢比（INR）计价。\n"
+            "- 请按印度市场语境分析，关注卢比汇率、印度储备银行（RBI）货币政策、外资（FII/FPI）与国内机构（DII）资金流、"
+            "SEBI 监管与附加监控措施（ASM/GSM）、个股价格带（circuit/price band，常见 2%/5%/10%/20%）、T+1 结算，"
+            "以及 Nifty 50 / Sensex 大盘环境；不要套用 A 股专属的涨跌停板、北向资金、龙虎榜等概念。"
+        ),
+        "en": (
+            "- This analysis covers an **Indian stock** (NSE-listed `.NS`, or BSE-listed `.BO`), priced in Indian rupees (INR).\n"
+            "- Use India-market context: INR FX, Reserve Bank of India (RBI) policy, foreign (FII/FPI) and domestic "
+            "institutional (DII) flows, SEBI regulation and surveillance frameworks (ASM/GSM), per-stock price bands "
+            "(circuit limits, commonly 2%/5%/10%/20%), T+1 settlement, and the Nifty 50 / Sensex backdrop; do not apply "
+            "China A-share-specific concepts such as limit-up boards, Northbound flows, or Dragon Tiger lists."
         ),
     },
 }

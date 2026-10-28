@@ -38,7 +38,17 @@ except ImportError:
     )
 
 # Market -> exchange code (exchange-calendars)
-MARKET_EXCHANGE = {"cn": "XSHG", "hk": "XHKG", "us": "XNYS", "jp": "XTKS", "kr": "XKRX", "tw": "XTAI"}
+# in: exchange-calendars has no XNSE; XBOM (BSE) shares NSE's session hours
+# (09:15-15:30 IST) and exchange holiday list, so it stands in for both.
+MARKET_EXCHANGE = {
+    "cn": "XSHG",
+    "hk": "XHKG",
+    "us": "XNYS",
+    "jp": "XTKS",
+    "kr": "XKRX",
+    "tw": "XTAI",
+    "in": "XBOM",
+}
 
 # Market -> IANA timezone for "today"
 MARKET_TIMEZONE = {
@@ -48,6 +58,7 @@ MARKET_TIMEZONE = {
     "jp": "Asia/Tokyo",
     "kr": "Asia/Seoul",
     "tw": "Asia/Taipei",
+    "in": "Asia/Kolkata",
 }
 
 # P0 market phase baseline (Issue #1386). This is an intentionally small
@@ -64,6 +75,10 @@ _CLOSING_AUCTION_WINDOW_MINUTES = {
     "jp": 5,
     "kr": 10,
     "tw": 5,
+    # in: NSE/BSE have no closing call auction inside the regular session (the
+    # closing price is a 15:00-15:30 VWAP), so the session stays INTRADAY until
+    # 15:30 and the window is zero.
+    "in": 0,
 }
 _SUPPORTED_ANALYSIS_PHASES = {
     "auto",
@@ -127,7 +142,7 @@ def get_market_for_stock(code: str) -> Optional[str]:
     Infer market region for a stock code.
 
     Returns:
-        'cn' | 'hk' | 'us' | 'jp' | 'kr' | 'tw' | None (None = unrecognized, fail-open: treat as open)
+        'cn' | 'hk' | 'us' | 'jp' | 'kr' | 'tw' | 'in' | None (None = unrecognized, fail-open: treat as open)
     """
     if not code or not isinstance(code, str):
         return None
