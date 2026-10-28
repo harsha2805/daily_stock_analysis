@@ -68,7 +68,7 @@ jobs:
       # new key at the end. It is re-saved every weekday (market holidays too); caches are
       # only evicted after 7 days without access, so normal schedules never lose it.
       - name: Restore analysis database
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: data/stock_analysis.db
           key: dsa-db-${{ github.ref_name }}-${{ github.run_id }}
@@ -591,7 +591,7 @@ jobs:
       
       - name: Save analysis database
         if: always() && hashFiles('data/stock_analysis.db') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: data/stock_analysis.db
           key: dsa-db-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
